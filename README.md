@@ -18,19 +18,19 @@
 
 <img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/b4740e17-80bb-424e-8613-3de6f92b4bf1" />
 
-## 53种图形库可供选择 包含组合图 热力图等  
-## 可调整： 图形规范 出版样式 配色 图形选项 图内文字 
-## 可生成600dpi Png Svg Pdf格式
+- 53种图形库可供选择 包含组合图 热力图等  
+- 可调整： 图形规范 出版样式 配色 图形选项 图内文字 
+- 可生成600dpi Png Svg Pdf格式
 
 <img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/32d1ef3d-724a-41f8-8699-92f1bd398310" />
 
 <img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/d48f755f-6e90-4108-89d1-07de39d87a95" />
 
-## 公式转--->Latex
+- 公式转--->Latex
 
 <img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/86e24ef0-617f-4c7f-adc8-1cf7dc01fe53" />
 
-## 多图自动排版
+- 多图自动排版
 
 <img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/fc7468e4-09d6-41e4-946b-af4dfed40a1d" />
 
