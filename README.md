@@ -54,13 +54,17 @@ npm run dev:function
 
 If Deno is unavailable, the static frontend can still build and run. Keep Function validation pending until Deno or an equivalent existing Function checker is available; `npm run build` checks the frontend only. Local proxy requests also need a running compatible Function server.
 
-![Uploading image.png…]()
 
 The local service binds to `127.0.0.1:8000`; Vite development and built preview proxy `/functions/v1/app` to it, preserving the path. Probe with an available HTTP tool or Node `fetch`; with `curl` installed, for example:
 
 ```sh
+<<<<<<< HEAD
 curl --fail 'http://127.0.0.1:5173/functions/v1/app?name=Visitor'
+=======
+
+>>>>>>> 471edf0f11177686cebf6b9dc50de5b9f5814954
 ```
+![alt text](image-3.png)
 
 Use Vite's actual port if it differs. The same frontend request after deployment is routed by Qoder Sites. Local proxy configuration is not production routing. Keep local-only servers and fixtures in `dev/`, outside both publication directories. The included Function has no dependencies; add self-contained runtime imports as required. Frontend npm dependencies are not automatically installed in Functions.
 
