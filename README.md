@@ -9,6 +9,7 @@ npm run dev
 
 Node.js 需要 `^22.13.0 || >=24.0.0`。构建：`npm run build`；图形和数值检查：`npm run check:charts`；公式模型实测：`npm run check:formula`。
 
+
 热图参数、图形类别、新增图形和覆盖边界见 [docs/plotting-upgrade.md](docs/plotting-upgrade.md)。公式识别默认使用 TexTeller 专用模型，在浏览器本机推理，首次需从 Hugging Face 下载约 316 MB 模型并缓存；截图不上传。
 
 以下保留初始模板的开发与可选服务端说明。
