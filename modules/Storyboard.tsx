@@ -15,7 +15,7 @@ export default function Storyboard() {
   const [slide, setSlide] = useState(0);
 
   useEffect(() => {
-    saveCards(cards);
+    void saveCards(cards).then(result=>{if(!result.ok)toast.error(result.message,{id:"storyboard-save-error"});});
   }, [cards]);
 
   const slides = useMemo(
@@ -114,7 +114,7 @@ export default function Storyboard() {
   return (
     <div>
       <ModuleHeader
-        code="MOD-05"
+        code="MOD-06"
         title="科研数据故事板"
         desc="把实验结果排成「研究问题 → 实验设计 → 关键发现 → 证据 → 结论」的可视化故事板，用于组会汇报。卡片自动保存在本机浏览器，可一键进入全屏演示模式。"
       />

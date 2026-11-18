@@ -1,4 +1,4 @@
-import { ChartModel, gstat } from "@/lib/chartmodel";
+import { ChartModel, gstat, type PlotOpts } from "@/lib/chartmodel";
 import { mean, sd, quantile, linreg, fmt } from "@/lib/stats";
 import { aucOf } from "@/lib/chartconclude2";
 
@@ -54,7 +54,7 @@ function groupInsights(m: Extract<ChartModel, { kind: "groups" }>, mode: Analysi
   return { metrics, details, recommendations };
 }
 
-function buildInsights(m: ChartModel, mode: AnalysisMode): ExtraInsights {
+function buildInsights(m: ChartModel, mode: AnalysisMode, options?:PlotOpts): ExtraInsights {
   if (m.kind === "groups") return groupInsights(m, mode);
   if (m.kind === "pair" || m.kind === "bar3d") {
     const labels = m.labels;
@@ -163,7 +163,7 @@ function buildInsights(m: ChartModel, mode: AnalysisMode): ExtraInsights {
     const top = [...off].sort((a, b) => Math.abs(b.v) - Math.abs(a.v)).slice(0, 6);
     const rowMeans = m.rows.map((r, i) => ({ r, v: mean(m.v[i]) })).sort((a, b) => b.v - a.v);
     return {
-      metrics: [{ label: "矩阵维度", value: `${m.rows.length}×${m.cols.length}` }, { label: "全域均值 ± SD", value: `${fmt(mean(flat))} ± ${fmt(sd(flat))}` }, { label: "最强关联", value: top[0] ? fmt(top[0].v) : "—" }, { label: "|值| ≥ 0.7", value: String(off.filter((x) => Math.abs(x.v) >= 0.7).length) }],
+      metrics: [{ label: "矩阵维度", value: `${m.rows.length}×${m.cols.length}` }, { label: "输入值均值 ± SD", value: `${fmt(mean(flat))} ± ${fmt(sd(flat))}` }, { label: "最大绝对数值", value: fmt(Math.max(...flat.map(Math.abs))) }, { label: "数值单元数", value: String(flat.length) }],
       details: [`最强非对角单元：${top.map((x) => `${x.r} × ${x.c} = ${fmt(x.v)}`).join("；")}。`, `行均值最高 ${rowMeans[0].r}（${fmt(rowMeans[0].v)}），最低 ${rowMeans[rowMeans.length - 1].r}（${fmt(rowMeans[rowMeans.length - 1].v)}）；全域范围 ${rangeOf(flat)}。`],
       recommendations: ["色标必须标明数值含义、范围和中心点；相关矩阵与表达矩阵不应共用未说明的发散色标。", "强关联需结合样本量、显著性和多重检验校正解释，热图本身不提供因果证据。"],
     };
@@ -177,12 +177,13 @@ function buildInsights(m: ChartModel, mode: AnalysisMode): ExtraInsights {
       qs[i] = Math.min(1, running);
     }
     const qMap = new Map(sorted.map((it, i) => [it, qs[i]]));
-    const sigFdr = m.items.filter((it) => Math.abs(it.fc) >= 1 && (qMap.get(it) ?? 1) < 0.05);
-    const sig = m.items.filter((it) => Math.abs(it.fc) >= 1 && it.p < 0.05);
+    const fcCut=options?.fcCut??1,pCut=options?.pCut??.05;
+    const sigFdr = m.items.filter((it) => Math.abs(it.fc) >= fcCut && (qMap.get(it) ?? 1) < pCut);
+    const sig = m.items.filter((it) => Math.abs(it.fc) >= fcCut && it.p < pCut);
     const up = sig.filter((it) => it.fc > 0).length;
     const down = sig.length - up;
     return {
-      metrics: [{ label: "检验特征数", value: String(m.items.length) }, { label: "P<0.05 且 |FC|≥2", value: String(sig.length) }, { label: "BH-FDR<0.05 且 |FC|≥2", value: String(sigFdr.length) }, { label: "上调 / 下调", value: `${up} / ${down}` }],
+      metrics: [{ label: "检验特征数", value: String(m.items.length) }, { label: `P<${pCut} 且 |log2FC|≥${fcCut}`, value: String(sig.length) }, { label: `BH-FDR<${pCut} 且 |log2FC|≥${fcCut}`, value: String(sigFdr.length) }, { label: "上调 / 下调", value: `${up} / ${down}` }],
       details: [`显著特征占全部特征的 ${share(sig.length, m.items.length)}；FDR 校正后保留 ${sigFdr.length} 个，占原始显著结果的 ${share(sigFdr.length, sig.length)}。`, `显著特征的 |log2FC| 中位数 ${sig.length ? fmt(quantile(sig.map((it) => Math.abs(it.fc)).sort((a, b) => a - b), 0.5)) : "—"}；按原始 P 值前 6 位：${sorted.slice(0, 6).map((it) => `${it.label}（log2FC ${fmt(it.fc)}，P ${fmt(it.p)}，q ${fmt(qMap.get(it) ?? 1)}）`).join("；")}。`],
       recommendations: ["正式差异分析建议报告 BH-FDR 而非仅报告原始 P 值；本页 q 值由输入 P 值统一估算，应与原始差异分析流程核对。", "确认 P 值来自合适的统计模型，并说明重复类型、批次校正和 log2FC 的比较方向；火山图不能替代原始表达分布检查。"],
     };
@@ -312,10 +313,10 @@ function buildInsights(m: ChartModel, mode: AnalysisMode): ExtraInsights {
   return EMPTY;
 }
 
-export function generateInsights(model: ChartModel, model2: ChartModel | null, mode: AnalysisMode): ExtraInsights {
-  const main = buildInsights(model, mode);
+export function generateInsights(model: ChartModel, model2: ChartModel | null, mode: AnalysisMode,options?:PlotOpts): ExtraInsights {
+  const main = buildInsights(model, mode,options);
   if (!model2) return main;
-  const second = buildInsights(model2, mode);
+  const second = buildInsights(model2, mode,options);
   return {
     metrics: [...main.metrics.slice(0, 4), ...second.metrics.slice(0, 2)],
     details: [...main.details, ...second.details.map((d) => `第二面板｜${d}`)],

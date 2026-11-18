@@ -1,4 +1,6 @@
 export interface Theme {
+  unitsPerPt?: number;
+  axisBounds?: {xMin?:number;xMax?:number;yMin?:number;yMax?:number};
   colors: string[];
   text: string;
   axis: string;
@@ -24,7 +26,7 @@ export const PALETTES: Record<string, string[]> = {
   单色蓝: ["#08306B", "#08519C", "#2171B5", "#4292C6", "#6BAED6", "#9ECAE1", "#C6DBEF", "#DEEBF7", "#3182BD", "#1F4E79"],
 };
 
-export const SIG_LEGEND = "ns P≥0.05 · * P<0.05 · ** P<0.01 · *** P<0.001 · **** P<0.0001";
+export const SIG_LEGEND = "*P < 0.05, **P < 0.01, ***P < 0.001, ****P < 0.0001. ns: P ≥ 0.05";
 
 export function textWidth(s: string, fs: number): number {
   let w = 0;
@@ -32,13 +34,16 @@ export function textWidth(s: string, fs: number): number {
   return w;
 }
 
-export function sigLegendSvg(t: Theme, x: number, y: number, fs?: number): string {
-  const fit = (1000 - x - 14) / textWidth(SIG_LEGEND, 1);
+export function sigLegendSvg(t: Theme, x: number, y: number, fs?: number, centered = false): string {
+  const fit = (centered ? x * 2 - 28 : 1000 - x - 14) / textWidth(SIG_LEGEND, 1);
   const size = Math.min(fs ?? t.tickFont * 0.92, fit);
-  return `<text x="${x}" y="${y}" fill="${t.text}" fill-opacity="0.75" font-size="${size.toFixed(1)}">${esc(SIG_LEGEND)}</text>`;
+  return `<text data-role="significance-legend" x="${x}" y="${y}" text-anchor="${centered ? "middle" : "start"}" fill="${t.text}" fill-opacity="0.75" font-size="${size.toFixed(1)}">${esc(SIG_LEGEND)}</text>`;
 }
 
 export const CMAPS: Record<string, string[]> = {
+  "green black red": ["#008000", "#000000", "#ff0000"],
+  "navy white firebrick3": ["#000080", "#ffffff", "#cd2626"],
+  "olive white pink": ["#808000", "#ffffff", "#ffc0cb"],
   "蓝-红（相关）": ["#2166AC", "#F7F7F7", "#B2182B"],
   Viridis: ["#440154", "#31688E", "#35B779", "#FDE725"],
   "红-黄（表达）": ["#FFF5EB", "#FDBE85", "#D94701"],
@@ -119,6 +124,8 @@ export interface Frame {
 
 export function frame(o: FrameOpts): Frame {
   const t = o.theme;
+  const b=t.axisBounds;
+  if(b) { o={...o,xlo:b.xMin??o.xlo,xhi:b.xMax??o.xhi,ylo:b.yMin??o.ylo,yhi:b.yMax??o.yhi}; if(o.xlo>=o.xhi||o.ylo>=o.yhi)throw new Error("坐标轴最大值必须大于最小值"); }
   const xt = o.xticks ?? niceTicks(o.xlo, o.xhi).ticks;
   const yt = o.yticks ?? niceTicks(o.ylo, o.yhi).ticks;
   let ml = o.ml, mr = o.mr, mb = o.mb;
@@ -282,6 +289,7 @@ export async function svgToPngBlob(svg: string, widthCm: number, heightCm: numbe
     });
     const w = Math.round((widthCm / 2.54) * dpi);
     const h = Math.round((heightCm / 2.54) * dpi);
+    if(w<1||h<1||w*h>64000000||w>20000||h>20000)throw new Error("导出像素尺寸过大，请缩小出版尺寸或减少面板（可改用 SVG）");
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;

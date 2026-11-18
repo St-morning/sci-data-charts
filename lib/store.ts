@@ -1,3 +1,5 @@
+import {readWorkspace,writeWorkspace,type SaveResult} from "./workspace-storage";
+export {initializeWorkspace,storageWarning} from "./workspace-storage";
 export interface StoryCard {
   id: string;
   section: SectionId;
@@ -33,17 +35,20 @@ export interface PanelItem {
 }
 
 export function loadPanels(): PanelItem[] {
-  return read<PanelItem[]>(PANELS_KEY, []);
+  const value=readWorkspace<unknown>(PANELS_KEY,[]);
+  return Array.isArray(value)?value.filter((p):p is PanelItem=>!!p&&typeof p.id==="string"&&typeof p.name==="string"&&(p.kind==="svg"||p.kind==="image")&&Number.isFinite(p.w)&&p.w>0&&Number.isFinite(p.h)&&p.h>0):[];
 }
 
-export function savePanels(list: PanelItem[]): void {
-  write(PANELS_KEY, list.slice(0, 24));
+export function savePanels(list: PanelItem[]): Promise<SaveResult> {
+  if(list.length>24)return Promise.resolve({ok:false,message:"最多保存 24 个面板，请先移除部分面板。"});
+  return writeWorkspace(PANELS_KEY, list);
 }
 
-export function addPanel(p: PanelItem): PanelItem[] {
+export async function addPanel(p: PanelItem): Promise<PanelItem[]> {
   const list = loadPanels().filter((x) => x.id !== p.id);
   list.push(p);
-  savePanels(list);
+  const result=await savePanels(list);
+  if(!result.ok)throw new Error(result.message);
   return loadPanels();
 }
 
@@ -58,39 +63,24 @@ export interface FindingSnapshot {
   groups: { name: string; n: number; mean: number; sd: number }[];
 }
 
-function read<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function write(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // 存储已满或被禁用时静默降级为会话内状态
-  }
-}
-
 export function loadCards(): StoryCard[] {
-  return read<StoryCard[]>(CARDS_KEY, []);
+  const value=readWorkspace<unknown>(CARDS_KEY,[]);
+  return Array.isArray(value)?value.filter((c):c is StoryCard=>!!c&&typeof c.id==="string"&&SECTIONS.some(s=>s.id===c.section)&&typeof c.title==="string"&&typeof c.body==="string"):[];
 }
 
-export function saveCards(cards: StoryCard[]): void {
-  write(CARDS_KEY, cards);
+export function saveCards(cards: StoryCard[]): Promise<SaveResult> {
+  return writeWorkspace(CARDS_KEY, cards);
 }
 
 export function loadFindings(): FindingSnapshot[] {
-  return read<FindingSnapshot[]>(FINDINGS_KEY, []);
+  const value=readWorkspace<unknown>(FINDINGS_KEY,[]);
+  return Array.isArray(value)?value.filter((f):f is FindingSnapshot=>!!f&&typeof f.id==="string"&&typeof f.metricName==="string"&&typeof f.unit==="string"&&typeof f.summary==="string"&&Array.isArray(f.results)&&f.results.every((x:unknown)=>typeof x==="string")&&Array.isArray(f.groups)&&f.groups.every((g:{name?:unknown;n?:unknown;mean?:unknown;sd?:unknown})=>g&&typeof g.name==="string"&&typeof g.n==="number"&&Number.isFinite(g.mean)&&Number.isFinite(g.sd))):[];
 }
 
-export function saveFinding(f: FindingSnapshot): void {
+export function saveFinding(f: FindingSnapshot): Promise<SaveResult> {
   const list = loadFindings().filter((x) => x.id !== f.id);
   list.unshift(f);
-  write(FINDINGS_KEY, list.slice(0, 12));
+  return writeWorkspace(FINDINGS_KEY, list.slice(0, 12));
 }
 
 export function uid(): string {

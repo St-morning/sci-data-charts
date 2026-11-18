@@ -1,4 +1,25 @@
+export interface HeatmapOptions {
+  columns: string; normalize: "row" | "column" | "both" | "none";
+  clusterRows: boolean; clusterCols: boolean; trees: "all" | "row" | "column" | "none";
+  distance: "euclidean" | "manhattan" | "correlation"; linkage: "average" | "complete" | "single";
+  treeHeight: number; treeWidth: number; hideRows: boolean; hideCols: boolean; numbers: boolean;
+  rowPt: number; colPt: number; numberPt: number; decimals: number; rotation: number;
+  cellWidth: number; cellHeight: number; borderWidth: number; borderColor: string;
+  customColors: string; groups: string; groupColors: string; labels: string;
+  cellShape: "rect" | "circle"; min: string; max: string; midpoint: string;
+}
+export const DEFAULT_HEATMAP: HeatmapOptions = {
+  columns: "", normalize: "row", clusterRows: true, clusterCols: true, trees: "all",
+  distance: "euclidean", linkage: "average", treeHeight: 20, treeWidth: 20,
+  hideRows: false, hideCols: false, numbers: false, rowPt: 10, colPt: 10, numberPt: 8,
+  decimals: 2, rotation: 45, cellWidth: 0, cellHeight: 0, borderWidth: 0, borderColor: "#ffffff",
+  customColors: "", groups: "", groupColors: "", labels: "", cellShape: "rect", min: "", max: "", midpoint: "",
+};
 export interface PlotOpts {
+  heat: HeatmapOptions;
+  fcCut: number; pCut: number; topN: number; opacity: number; barWidth: number; jitter: number;
+  clusterK: number; pcX: number; pcY: number; standardize: boolean; distance: "euclidean" | "bray";
+  donutHole: number; startAngle: number; nodeRadius: number; edgeWidth: number; showLabels: boolean;
   title: string;
   xLabel: string;
   yLabel: string;
@@ -27,6 +48,9 @@ export interface PlotOpts {
 }
 
 export const DEFAULT_OPTS: PlotOpts = {
+  heat: DEFAULT_HEATMAP, fcCut: 1, pCut: 0.05, topN: 20, opacity: 0.75, barWidth: 0.66, jitter: 0.72,
+  clusterK: 3, pcX: 1, pcY: 2, standardize: true, distance: "euclidean",
+  donutHole: 0.5, startAngle: 0, nodeRadius: 14, edgeWidth: 2, showLabels: true,
   title: "",
   xLabel: "",
   yLabel: "",
@@ -49,7 +73,7 @@ export const DEFAULT_OPTS: PlotOpts = {
   contour: false,
   bins: 12,
   showLegend: true,
-  cmap: "蓝-红（相关）",
+  cmap: "green black red",
   sigLegend: true,
   labelPos: "above",
 };

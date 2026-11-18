@@ -5,9 +5,9 @@ import { fmt } from "@/lib/stats";
 const W = 1000, H = 700;
 const FC_CUT = 1, P_CUT = 0.05;
 
-export function volcanoClass(fc: number, p: number): "up" | "down" | "ns" {
-  if (p < P_CUT && fc >= FC_CUT) return "up";
-  if (p < P_CUT && fc <= -FC_CUT) return "down";
+export function volcanoClass(fc: number, p: number, fcCut = FC_CUT, pCut = P_CUT): "up" | "down" | "ns" {
+  if (p < pCut && fc >= fcCut) return "up";
+  if (p < pCut && fc <= -fcCut) return "down";
   return "ns";
 }
 
@@ -16,16 +16,16 @@ function volcanoPanel(m: VolcanoModel, t: Theme, o: PlotOpts, ox: number, w: num
   const xabs = Math.max(...m.items.map((it) => Math.abs(it.fc)), 2) * 1.1;
   const f = frame({ w, h: H, ml: 85, mr: 25, mt: 60, mb: 85, xlo: -xabs, xhi: xabs, ylo: 0, yhi: Math.max(...ys, 2) * 1.12, xlabel: o.xLabel || "log2(Fold Change)", ylabel: o.yLabel || "-log10(P)", title: ox === 0 ? o.title : "", theme: t });
   let s = `<g transform="translate(${ox},0)">${f.svg}`;
-  const ycut = -Math.log10(P_CUT);
+  const ycut = -Math.log10(o.pCut), FC_CUT=o.fcCut;
   s += `<line x1="${f.X(-xabs)}" y1="${f.Y(ycut)}" x2="${f.X(xabs)}" y2="${f.Y(ycut)}" stroke="${t.axis}" stroke-width="1.6" stroke-dasharray="6 5"/>`;
   s += `<line x1="${f.X(-FC_CUT)}" y1="${f.Y(0)}" x2="${f.X(-FC_CUT)}" y2="${f.Y(Math.max(...ys, 2) * 1.12)}" stroke="${t.axis}" stroke-width="1.6" stroke-dasharray="6 5"/>`;
   s += `<line x1="${f.X(FC_CUT)}" y1="${f.Y(0)}" x2="${f.X(FC_CUT)}" y2="${f.Y(Math.max(...ys, 2) * 1.12)}" stroke="${t.axis}" stroke-width="1.6" stroke-dasharray="6 5"/>`;
   const colOf = { up: t.colors[0], down: t.colors[1 % t.colors.length], ns: t.colors[7 % t.colors.length] };
   for (const it of m.items) {
-    const cls = volcanoClass(it.fc, it.p);
+    const cls = volcanoClass(it.fc, it.p,o.fcCut,o.pCut);
     s += `<circle cx="${f.X(it.fc)}" cy="${f.Y(-Math.log10(Math.max(it.p, 1e-300)))}" r="${cls === "ns" ? 4.5 : 6}" fill="${colOf[cls]}" fill-opacity="${cls === "ns" ? 0.45 : 0.8}"/>`;
   }
-  const top = [...m.items].filter((it) => volcanoClass(it.fc, it.p) !== "ns").sort((a, b) => a.p - b.p).slice(0, 6);
+  const top = [...m.items].filter((it) => volcanoClass(it.fc, it.p,o.fcCut,o.pCut) !== "ns").sort((a, b) => a.p - b.p).slice(0, o.topN);
   const glFs = 17 * t.fontScale;
   const placed: { x: number; y: number; w: number; h: number }[] = [];
   if (o.showLegend && ox === 0) placed.push({ x: 96, y: 20, w: 380, h: 30 });
@@ -73,8 +73,8 @@ function volcanoPanel(m: VolcanoModel, t: Theme, o: PlotOpts, ox: number, w: num
 
 export function volcanoPlot(m: VolcanoModel, t: Theme, o: PlotOpts): Rendered {
   let s = volcanoPanel(m, t, o, 0, W);
-  const nUp = m.items.filter((i) => volcanoClass(i.fc, i.p) === "up").length;
-  const nDn = m.items.filter((i) => volcanoClass(i.fc, i.p) === "down").length;
+  const nUp = m.items.filter((i) => volcanoClass(i.fc, i.p,o.fcCut,o.pCut) === "up").length;
+  const nDn = m.items.filter((i) => volcanoClass(i.fc, i.p,o.fcCut,o.pCut) === "down").length;
   if (o.showLegend) s += legend([{ name: `上调 (${nUp})`, color: t.colors[0], shape: "dot" }, { name: `下调 (${nDn})`, color: t.colors[1 % t.colors.length], shape: "dot" }, { name: "不显著", color: t.colors[7 % t.colors.length], shape: "dot" }], 100, 34, t);
   return { inner: s, w: W, h: H };
 }

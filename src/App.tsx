@@ -26,12 +26,12 @@ import {
 
 const NAV = [
   { hash: "#/", code: "00", label: "工作台总览", icon: BarChart3 },
-  { hash: "#/audit", code: "01", label: "论文图表复核", icon: FileSearch },
-  { hash: "#/paragraph", code: "02", label: "数据 → 论文段落", icon: BarChart3 },
-  { hash: "#/integrity", code: "03", label: "图片防误用检测", icon: Images },
-  { hash: "#/batch", code: "04", label: "跨批次对比", icon: Layers },
-  { hash: "#/storyboard", code: "05", label: "数据故事板", icon: Presentation },
-  { hash: "#/plot", code: "06", label: "科研 / BI 绘图", icon: Palette },
+  { hash: "#/plot", code: "01", label: "科研 / BI 绘图", icon: Palette },
+  { hash: "#/audit", code: "02", label: "论文图表复核", icon: FileSearch },
+  { hash: "#/paragraph", code: "03", label: "数据 → 论文段落", icon: BarChart3 },
+  { hash: "#/integrity", code: "04", label: "图片防误用检测", icon: Images },
+  { hash: "#/batch", code: "05", label: "跨批次对比", icon: Layers },
+  { hash: "#/storyboard", code: "06", label: "数据故事板", icon: Presentation },
   { hash: "#/compose", code: "07", label: "多图自动排版", icon: LayoutGrid },
   { hash: "#/formula", code: "08", label: "公式截图 → LaTeX", icon: Sigma },
 ] as const;
@@ -85,9 +85,9 @@ function Overview() {
     "#/audit": "检查单位、有效数字、误差棒声明、颜色辨识度（含色盲模拟）与图文数值一致性。",
     "#/paragraph": "上传 Excel / CSV，自动清洗、统计检验、绘制误差棒图，生成事实与推断分离的论文初稿。",
     "#/integrity": "对多张科研图片做感知哈希比对，检测重复使用、镜像翻转、裁剪重叠与比例尺不一致。",
-    "#/batch": "对齐不同日期 / 仪器 / 批次的数据，用方差分解判断变化来自样品本身还是测试误差。",
+    "#/batch": "对齐不同日期 / 仪器 / 批次数据，分解样品间、批次间及残差（交互作用＋测量误差）。",
     "#/storyboard": "把实验结果排成「研究问题 → 实验设计 → 关键发现 → 证据 → 结论」的组会故事板。",
-    "#/plot": "53 种 SCI / BI 图形：期刊配色、字体字号线宽、显著性星号图例、图内文字中英改写与文字遮挡质量门。",
+    "#/plot": "73 种 SCI / BI 图形：聚类热图、PCA/PCoA、富集气泡、序列 LOGO、动态参数与图元精调。",
     "#/compose": "多张图自动排成期刊 Figure：A/B/C 面板编号、统一栏宽与间距，导出组合 SVG 与 600 dpi PNG。",
     "#/formula": "粘贴公式截图，本地 OCR 识别转 LaTeX，KaTeX 实时预览，支持模板插入与 .tex 下载。",
   };
@@ -128,7 +128,7 @@ function Overview() {
       </section>
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="平台能力">
-        {[{ value: "8", label: "本地分析工具" }, { value: "53", label: "科研与 BI 图形" }, { value: "600 dpi", label: "出版级 PNG" }, { value: "100%", label: "浏览器本地计算" }].map((s) => (
+        {[{ value: "8", label: "本地分析工具" }, { value: "73", label: "科研与 BI 图形" }, { value: "600 dpi", label: "出版级 PNG" }, { value: "100%", label: "浏览器本地计算" }].map((s) => (
           <div key={s.label} className="rounded-xl border border-border bg-card px-4 py-4"><span className="num text-xl font-semibold">{s.value}</span><p className="mt-1 text-xs text-muted-foreground">{s.label}</p></div>
         ))}
       </section>

@@ -1,0 +1,644 @@
+﻿0 | 1.数据预处理
+1 | 一、通用基础步骤（所有数据都适用）
+2 | 在针对数据类型做特定处理前，通常先过一遍这些“脏数据”检查：
+3 | 缺失值处理：删除（缺失比例极高时）、填充（均值/中位数/众数填充，或使用插值法、KNN填充）、或建模预测填充。
+4 | 重复值处理：检测完全重复或关键字段重复的行，根据业务逻辑保留唯一值或合并。
+5 | 异常值检测与处理：使用3σ原则（正态分布）、箱线图（IQR，即四分位距）识别离群点；处理方式包括删除、修正为阈值、或视为缺失值处理。
+6 | 数据类型矫正：确保日期是datetime格式，分类变量是category/object类型，数值变量是int/float。
+7 | 二、针对数值型数据的特定方法
+8 | 数值数据最关心量纲和分布：
+9 | 缩放（无量纲化）：
+10 | 标准化（Zscore）：转为均值为0，标准差为1，适用于线性回归、SVM（支持向量机）、PCA（主成分分析）等。
+11 | 归一化（MinMax）：缩放到[0,1]区间，适用于神经网络、KNN（K近邻）等对距离敏感的算法。
+12 | 处理偏态分布：若数据严重右偏（如收入），取对数变换；若有0值，用BoxCox变换；使其更接近正态分布。
+13 | 离散化（分箱）：将连续值转为有序分段（如年龄分为青年/中年/老年），可削弱异常值影响，常用于逻辑回归或评分卡。
+14 | 三、针对分类型数据的特定方法
+15 | 分类变量无法直接输入模型，需转换为数值，并处理类别不平衡或稀有类别：
+16 | 编码转换：
+17 | 标签编码（Label Encoding）：给类别赋数字（0,1,2...），适用于有序分类（如学历）。
+18 | 独热编码（OneHot）：扩增为二值特征列，适用于无序分类（如颜色），但类别过多时需注意维度爆炸。
+19 | 目标编码（Target Encoding）：用目标变量的均值替换类别，适用于高基数分类特征（如城市ID），但需配合交叉验证防止过拟合。
+20 | 降基处理：将频数极低的类别合并为“其他”类别，避免模型学到噪声。
+21 | 四、针对文本数据的特定方法
+22 | 文本是非结构化数据，核心是清洗和向量化：
+23 | 基础清洗：转为小写、去除HTML标签、去除特殊符号/数字（视业务而定）。
+24 | 停用词与分词：移除无意义的虚词（的、了、the），中文需使用分词工具（如jieba）进行切词。
+25 | 词形还原/词干提取（英文）：将单词还原为词根（如running>run）。
+26 | 向量化表示：
+27 | 词袋模型（CountVectorizer/TFIDF）：统计词频，TFIDF（词频逆文档频率）能降低常见通用词的权重。
+28 | 词嵌入（Word2Vec/GloVe）：生成稠密向量，保留语义关系，适用于深度学习。
+29 | 五、针对时间序列数据的特定方法
+30 | 时间序列依赖时间顺序，核心是平稳性和季节性：
+31 | 时间格式化：提取年、月、日、小时、星期几等衍生特征。
+32 | 重采样：将高频数据（分钟级）聚合为日/周级，或填充缺失的时间戳。
+33 | 平稳化处理：若数据有趋势或季节性，需进行差分（一阶/二阶）或去趋势（对数/移动平均）。
+34 | 滑窗特征：构造滞后项（Lag features）和滚动统计量（过去7天的均值/标准差），供机器学习模型使用。
+35 | 六、针对图像/音频数据的特定方法
+36 | 这类高维数据侧重信号处理和增强：
+37 | 图像：调整尺寸（Resize）、归一化像素值（除以255）、数据增强（随机旋转、裁剪、翻转、色彩抖动）以扩充样本和提升泛化性。
+38 | 音频：预加重（提升高频）、分帧加窗、去除静音段；特征提取通常转为梅尔频谱图（Melspectrogram）或MFCC（梅尔频率倒谱系数）向量。
+39 | 七、进阶：特征工程层面的“清洗”
+40 | 解决多重共线性：计算VIF（方差膨胀因子），剔除高度相关的特征，或使用PCA降维。
+41 | 过滤低方差特征：方差接近于0的特征（几乎恒定）对模型无贡献，可直接删除。
+42 | 先拆分训练集和测试集，再对训练集拟合预处理参数（如均值、最大值、编码词典），然后将这些参数应用到测试集。千万不能先用全量数据统计信息再拆分，否则会造成数据泄露（Data Leakage），导致模型评估失真。
+44 | 2.分组柱状图|python源码
+45 | 复现效果一第一种论文绘制效果如下
+46 | 横坐标有3个指标：hCD45、CD4、CD8；每个指标下面又有G1–G4四个实验组。纵坐标是Absolute number of indicated cells，也就是相应细胞的绝对数量。
+47 | 每一种图形元素承担的功能不同：
+48 | 柱子的高度：通常表示每组的均值；
+49 | 柱子上的圆点：每一个圆点代表一个独立样本/重复实验，因此可以直接看到数据离散程度；黑色误差棒：表示数据的不确定性范围，可能是Mean±SD、Mean±SEM或95%CI ANOVA P<0.001/Kruskal P<0.001：表示四组整体比较存在统计学差异；
+50 | 上方括号+星号：表示括号两端对应的两个组进行了进一步的两两比较。
+51 | 标记
+52 | 一般含义
+53 | ns
+54 | P≥0.05，差异不显著
+55 | *
+56 | P<0.05
+57 | **
+58 | P<0.01
+59 | ***
+60 | P<0.001
+61 | ****
+62 | P<0.0001
+63 | 星号越多，并不等于“两组差得越多”。它表达的是P值越小、统计证据越强，而不是效应量越大
+64 | 复现效果二另外一种分组柱状图也是类似复现主要分了两组
+65 | python源码2.1第一种样式的主要绘图代码整理如下
+66 | import numpy as np
+67 | import matplotlib.pyplot as plt
+68 | from scipy import stats
+69 | #----------辅助函数（用于数据标准化和颜色构建）----------
+70 | def normalize_paper_data(data,group_labels=None,feature_labels=None):
+71 | """
+72 | 将输入数据规范化为(groups,features,values)格式。
+73 | 假设data为字典：{group:{feature:array-like}}。
+74 | """
+75 | groups=list(data.keys())if group_labels is None else group_labels
+76 | features=list(data[groups[0]].keys())if feature_labels is None else feature_labels
+77 | values={g:{f:np.asarray(data[g][f])for f in features}for g in groups}
+78 | return groups,features,values
+79 | def build_feature_colors(features,colors=None):
+80 | """为每个特征分配颜色。"""
+81 | if colors is None:
+82 | cmap=plt.cm.tab10
+83 | color_map={f:cmap(i%10)for i,f in enumerate(features)}
+84 | elif isinstance(colors,dict):
+85 | color_map={f:colors.get(f,'gray')for f in features}
+86 | else:#list
+87 | color_map={f:colors[i%len(colors)]for i,f in enumerate(features)}
+88 | return color_map
+89 | def build_edge_colors(features,edge_color=None,color_map=None):
+90 | """构建柱子边缘颜色，默认与填充色一致。"""
+91 | if edge_color is None:
+92 | return{f:color_map[f]for f in features}
+93 | elif isinstance(edge_color,dict):
+94 | return{f:edge_color.get(f,color_map[f])for f in features}
+95 | else:
+96 | return{f:edge_color for f in features}
+97 | #----------主绘图函数（完整版）----------
+98 | def plot_paper_grouped_bar(
+99 | data,
+100 | group_labels=None,
+101 | feature_labels=None,
+102 | colors=None,
+103 | comparisons=None,
+104 | group_texts=None,
+105 | ylabel='Absolute number of indicated cells',
+106 | title=None,
+107 | legend_title='Features',
+108 | figsize=None,#改为None，内部自动计算
+109 | display_dpi=100,
+110 | save_dpi=300,
+111 | bar_width=None,
+112 | feature_gap=0.16,
+113 | group_gap=None,
+114 | point_size=72,
+115 | bar_alpha=0.52,
+116 | point_alpha=0.24,
+117 | error_color='#151515',
+118 | edge_color=None,
+119 | label_fontsize=18,
+120 | tick_fontsize=15,
+121 | legend_fontsize=13,
+122 | legend_title_size=14,
+123 | group_text_size=14,
+124 | bracket_fontsize=13,
+125 | panel_label=None,
+126 | save_path=None,
+127 | ax=None,
+128 | show=True,
+129 | ):
+130 | """
+131 | 绘制论文风格的分组柱状图，包含：
+132 | -分组柱状图（均值）
+133 | -原始数据散点（半透明）
+134 | -误差棒（标准差）
+135 | -自动调整柱宽与间距
+136 | -显著性括号与标注（星号等）
+137 | -完整的坐标轴美化
+138 | """
+139 | #--------------------1.数据准备--------------------
+140 | groups,features,values=normalize_paper_data(data,group_labels,feature_labels)
+141 | color_map=build_feature_colors(features,colors)
+142 | edge_color_map=build_edge_colors(features,edge_color,color_map)
+143 | n_groups=len(groups)
+144 | n_features=len(features)
+145 | #--------------------2.布局计算--------------------
+146 | if bar_width is None:
+147 | bar_width=0.56 if n_features<=4 else max(0.18,0.78/n_features)
+148 | if group_gap is None:
+149 | group_gap=max(0.8,bar_width*1.9)
+150 | bar_step=bar_width+feature_gap
+151 | group_positions=[]#每个组内各特征柱子的x坐标
+152 | group_centers=[]#每个组的中心x坐标
+153 | current_x=0.0
+154 | for_in groups:
+155 | xs=current_x+np.arange(n_features)*bar_step
+156 | group_positions.append(xs)
+157 | group_centers.append(float(xs.mean()))
+158 | current_x=xs[-1]+bar_width+group_gap
+159 | #--------------------3.Y轴范围与显著性预留--------------------
+160 | all_values=np.concatenate([
+161 | values[group][feature].ravel()
+162 | for group in groups
+163 | for feature in features
+164 | ])
+165 | y_data_max=float(np.max(all_values))
+166 | y_data_min=float(np.min(all_values))
+167 | y_span=max(y_data_max-min(0.0,y_data_min),1.0)
+168 | bracket_height=max(1.2,y_span*0.015)
+169 | bracket_step=max(4.0,y_span*0.095)
+170 | top_margin=max(4.0,y_span*0.10)
+171 | text_gap=max(4.0,y_span*0.07)
+172 | #统计各组比较数量，用于堆叠括号
+173 | comp_map={group:[]for group in groups}
+174 | if comparisons:
+175 | for idx,comp in enumerate(comparisons):
+176 | group=comp['group']
+177 | if group not in comp_map:
+178 | raise KeyError(f'comparison group not found:{group}')
+179 | comp_map[group].append((idx,comp))
+180 | max_levels=max((len(items)for items in comp_map.values()),default=0)
+181 | y_limit_top=y_data_max+top_margin+max_levels*bracket_step+text_gap+y_span*0.08
+182 | #--------------------4.创建图形与坐标轴--------------------
+183 | if figsize is None:
+184 | figsize=(max(9.5,1.6*n_groups+7.0),max(7.0,1.1*n_features+4.4))
+185 | if ax is None:
+186 | fig,ax=plt.subplots(figsize=figsize,dpi=display_dpi)
+187 | else:
+188 | fig=ax.figure
+189 | #--------------------5.设置坐标轴样式--------------------
+190 | ax.set_facecolor('white')
+191 | ax.set_ylim(0,y_limit_top)
+192 | ax.set_xlim(
+193 | group_positions[0][0]-bar_width*1.6,
+194 | group_positions[-1][-1]+bar_width*1.6
+195 | )
+196 | ax.set_ylabel(ylabel,fontsize=22,fontweight='bold',labelpad=6)
+197 | if title:
+198 | ax.set_title(title,fontsize=20,fontweight='bold',pad=12)
+199 | ax.tick_params(
+200 | axis='both',which='major',
+201 | direction='out',length=6.5,width=1.8,pad=6,
+202 | labelsize=tick_fontsize
+203 | )
+204 | for label in ax.get_yticklabels():
+205 | label.set_fontweight('bold')
+206 | ax.set_xticks(group_centers)
+207 | ax.set_xticklabels(groups,fontsize=label_fontsize,fontweight='bold')
+208 | for spine in['left','bottom']:
+209 | ax.spines[spine].set_linewidth(2.3)
+210 | ax.spines[spine].set_color('black')
+211 | for spine in['top','right']:
+212 | ax.spines[spine].set_visible(False)
+213 | #--------------------6.绘制柱状图、误差点与误差棒--------------------
+214 | #计算均值和标准差
+215 | means={}
+216 | stds={}
+217 | for g in groups:
+218 | means[g]={}
+219 | stds[g]={}
+220 | for f in features:
+221 | vals=values[g][f]
+222 | means[g][f]=np.mean(vals)
+223 | stds[g][f]=np.std(vals,ddof=1)if len(vals)>1 else 0
+224 | for i,g in enumerate(groups):
+225 | for j,f in enumerate(features):
+226 | x=group_positions[i][j]
+227 | y=means[g][f]
+228 | err=stds[g][f]
+229 | color=color_map[f]
+230 | edge=edge_color_map[f]
+231 | #6a.柱子
+232 | ax.bar(
+233 | x,y,width=bar_width,
+234 | color=color,alpha=bar_alpha,
+235 | edgecolor=edge,linewidth=1.2,
+236 | label=f if i==0 else""#只在第一组添加图例标签
+237 | )
+238 | #6b.原始数据散点（轻微抖动）
+239 | vals=values[g][f]
+240 | x_jitter=np.random.normal(0,0.02*bar_width,len(vals))
+241 | ax.scatter(
+242 | x+x_jitter,vals,
+243 | s=point_size,color=color,alpha=point_alpha,
+244 | edgecolors='none'
+245 | )
+246 | #6c.误差棒
+247 | ax.errorbar(
+248 | x,y,yerr=err,
+249 | fmt='none',ecolor=error_color,
+250 | capsize=4,capthick=2,linewidth=2
+251 | )
+252 | #--------------------7.显著性括号与标注--------------------
+253 | if comparisons:
+254 | for group in groups:
+255 | items=comp_map[group]
+256 | if not items:
+257 | continue
+258 | items_sorted=sorted(items,key=lambda x:x[0])
+259 | #获取该组内特征对应的x坐标
+260 | feature_x={
+261 | f:group_positions[groups.index(group)][j]
+262 | for j,f in enumerate(features)
+263 | }
+264 | for level,(idx,comp)in enumerate(items_sorted):
+265 | f1=comp['feature1']
+266 | f2=comp.get('feature2',f1)#若只有单个特征，则与0比较
+267 | x1=feature_x[f1]
+268 | x2=feature_x[f2]if f2!=f1 else x1
+269 | y1=means[group][f1]
+270 | y2=means[group][f2]if f2!=f1 else 0
+271 | y_max=max(y1,y2)
+272 | bracket_y=y_max+top_margin*0.3+level*bracket_step
+273 | #横线
+274 | ax.plot([x1,x2],[bracket_y,bracket_y],color='black',linewidth=1.5)
+275 | #竖线（虚线）
+276 | ax.plot([x1,x1],[y_max,bracket_y],color='black',linewidth=1.5,linestyle='--')
+277 | ax.plot([x2,x2],[y_max,bracket_y],color='black',linewidth=1.5,linestyle='--')
+278 | #标注文字（如*、**、n.s.）
+279 | symbol=comp.get('symbol','n.s.')
+280 | ax.text(
+281 | (x1+x2)/2,bracket_y+text_gap*0.3,
+282 | symbol,
+283 | ha='center',va='bottom',
+284 | fontsize=bracket_fontsize,fontweight='bold'
+285 | )
+286 | #--------------------8.图例、组内文字、面板标签--------------------
+287 | handles,labels=ax.get_legend_handles_labels()
+288 | by_label=dict(zip(labels,handles))
+289 | if by_label:
+290 | ax.legend(
+291 | by_label.values(),by_label.keys(),
+292 | title=legend_title,
+293 | fontsize=legend_fontsize,
+294 | title_fontsize=legend_title_size,
+295 | frameon=False,
+296 | bbox_to_anchor=(1.02,1),
+297 | loc='upper left'
+298 | )
+299 | if group_texts:
+300 | for g,txt in zip(groups,group_texts):
+301 | xi=group_centers[groups.index(g)]
+302 | ax.text(
+303 | xi,-y_span*0.06,txt,
+304 | ha='center',va='top',
+305 | fontsize=group_text_size,fontweight='bold'
+306 | )
+307 | if panel_label:
+308 | ax.text(
+309 | -0.12,1.02,panel_label,
+310 | transform=ax.transAxes,
+311 | fontsize=20,fontweight='bold',
+312 | va='bottom',ha='right'
+313 | )
+314 | #--------------------9.保存与显示--------------------
+315 | plt.tight_layout()
+316 | if save_path:
+317 | plt.savefig(save_path,dpi=save_dpi,bbox_inches='tight')
+318 | if show:
+319 | plt.show()
+320 | return fig,ax
+321 | 2.2第二种样式主要的绘图代码已经整理到了以下函数，然后下面是主函数的调用，可以自由修改数据和绘图部分的颜色设置
+322 | import numpy as np
+323 | import matplotlib.pyplot as plt
+324 | from matplotlib.colors import to_rgba
+325 | #--------------------配置参数（可按需修改）--------------------
+326 | FIGSIZE=(12,7)#画布尺寸
+327 | DPI=100#显示分辨率
+328 | OUT_NAME="marker_composition.pdf"#输出文件名（支持.png,.pdf等）
+329 | #--------------------模拟数据（请替换为真实数据）--------------------
+330 | #marker_specs列表，每个元素为一个字典：
+331 | #'name':标记物名称（用于x轴标签）
+332 | #'x':横坐标位置（整数或浮点数）
+333 | #'values':该标记物的测量值数组（每个点代表一个样本）
+334 | #'jitter':散点的随机偏移量（避免重叠）
+335 | marker_specs=[
+336 | {'name':'CD3','x':0,'values':np.random.normal(45,8,20),'jitter':0.12},
+337 | {'name':'CD4','x':1,'values':np.random.normal(30,6,20),'jitter':-0.08},
+338 | {'name':'CD8','x':2,'values':np.random.normal(25,7,20),'jitter':0.15},
+339 | {'name':'CD19','x':3,'values':np.random.normal(15,5,20),'jitter':-0.10},
+340 | {'name':'CD56','x':4,'values':np.random.normal(10,4,20),'jitter':0.05},
+341 | {'name':'CD14','x':5,'values':np.random.normal(8,3,20),'jitter':0.20},
+342 | {'name':'CD16','x':6,'values':np.random.normal(12,5,20),'jitter':-0.15},
+343 | {'name':'CD11c','x':7,'values':np.random.normal(18,6,20),'jitter':0.10},
+344 | {'name':'HLA-DR','x':8,'values':np.random.normal(22,7,20),'jitter':-0.05},
+345 | {'name':'CD45','x':9,'values':np.random.normal(60,9,20),'jitter':0.08},
+346 | ]
+347 | #颜色映射：为每个标记物指定颜色（十六进制或颜色名）
+348 | palette={
+349 | 'CD3':'#1f77b4',
+350 | 'CD4':'#ff7f0e',
+351 | 'CD8':'#2ca02c',
+352 | 'CD19':'#d62728',
+353 | 'CD56':'#9467bd',
+354 | 'CD14':'#8c564b',
+355 | 'CD16':'#e377c2',
+356 | 'CD11c':'#7f7f7f',
+357 | 'HLA-DR':'#bcbd22',
+358 | 'CD45':'#17becf',
+359 | }
+360 | #--------------------绘图函数（完整版）--------------------
+361 | def plot_marker_composition(palette,out_name=None):
+362 | """绘制标记物组成图，显示均值柱、误差棒和原始数据点"""
+363 | fig,ax=plt.subplots(figsize=FIGSIZE,dpi=DPI)
+364 | #坐标轴范围与刻度
+365 | ax.set_ylim(0,71.5)
+366 | ax.set_xlim(-0.9,9.6)
+367 | ax.set_yticks(np.arange(0,71,10))
+368 | ax.set_xticks([spec['x']for spec in marker_specs])
+369 | ax.set_xticklabels(
+370 | [spec['name']for spec in marker_specs],
+371 | rotation=45,ha='right',rotation_mode='anchor',
+372 | fontsize=24,fontweight='bold'
+373 | )
+374 | ax.set_ylabel('Measurement(%)',fontsize=34,fontweight='bold',labelpad=26)
+375 | ax.tick_params(axis='both',which='major',direction='in',length=14,width=2.8,pad=8)
+376 | ax.tick_params(axis='y',labelsize=25)
+377 | for label in ax.get_yticklabels():
+378 | label.set_fontweight('bold')
+379 | #坐标轴线样式
+380 | for spine in['left','bottom']:
+381 | ax.spines[spine].set_linewidth(3.2)
+382 | ax.spines[spine].set_color('black')
+383 | for spine in['top','right']:
+384 | ax.spines[spine].set_visible(False)
+385 | #绘制每个标记物的柱状图、误差棒和散点
+386 | for spec in marker_specs:
+387 | x=spec['x']
+388 | y=spec['values']
+389 | mean=y.mean()
+390 | sd=y.std(ddof=1)
+391 | color=palette[spec['name']]
+392 | #柱子（均值）
+393 | ax.bar(
+394 | x,mean,
+395 | width=0.56,
+396 | color=to_rgba(color,0.86),
+397 | edgecolor='#333333',
+398 | linewidth=2.2,
+399 | zorder=1
+400 | )
+401 | #误差棒（标准差）
+402 | ax.errorbar(
+403 | x,mean,
+404 | yerr=sd,
+405 | fmt='none',
+406 | ecolor='#1d1d1d',
+407 | elinewidth=2.4,
+408 | capsize=6.5,
+409 | capthick=2.4,
+410 | zorder=2
+411 | )
+412 | #原始数据点（带抖动）
+413 | ax.scatter(
+414 | np.full_like(y,x)+spec['jitter'],
+415 | y,
+416 | s=230,
+417 | facecolor=to_rgba(color,0.68),
+418 | edgecolor='#1f1f1f',
+419 | linewidth=1.1,
+420 | zorder=3
+421 | )
+422 | #可选：添加左右分组标签（如需分组注释）
+423 | #取消注释以下代码以绘制两组之间的分隔线和标题
+424 | #left_x0,left_x1=-0.35,3.35
+425 | #right_x0,right_x1=4.45,9.35
+426 | #title_y=68.2
+427 | #label_y=69.8
+428 | #ax.plot([left_x0,left_x1],[title_y,title_y],color='black',linewidth=2.5)
+429 | #ax.text((left_x0+left_x1)/2,label_y,'Left Group',
+430 | #ha='center',va='bottom',fontsize=22,fontweight='bold')
+431 | #ax.plot([right_x0,right_x1],[title_y,title_y],color='black',linewidth=2.5)
+432 | #ax.text((right_x0+right_x1)/2,label_y,'Right Group',
+433 | #ha='center',va='bottom',fontsize=22,fontweight='bold')
+434 | plt.tight_layout()
+435 | if out_name:
+436 | plt.savefig(out_name,dpi=300,bbox_inches='tight')
+437 | plt.show()
+438 | return fig,ax
+439 | #--------------------执行绘图--------------------
+440 | if__name__=="__main__":
+441 | plot_marker_composition(palette,OUT_NAME)
+442 | 3.选择建议速查表
+443 | 编号
+444 | 图表类型
+445 | 推荐适用场景
+446 | 1
+447 | 基础柱形图
+448 | 分类数量较少（≤12个）时进行简单的数值对比，如不同产品的销量比较。
+449 | 2
+450 | 分组柱形图
+451 | 同一分类下存在多个子系列，需要同时比较组内和组间的差异，如多个销售员在不同季度的业绩。
+452 | 3
+453 | 堆积柱形图
+454 | 既要展示各分类的总值，又要展示其内部构成的比例或绝对量，如各月总销售额及不同产品线的贡献。
+455 | 4
+456 | 百分比堆积柱形图
+457 | 重点关注各分类内各部分的比例分布而非绝对数值，适合跨分类比较构成，如不同年龄段人群的学历构成。
+458 | 5
+459 | 多分类柱形图
+460 | 需要按多级层次（如区域→城市→店铺）组织横轴标签，展示嵌套分类下的数据对比。
+461 | 6
+462 | 基础条形图
+463 | 分类标签较长或分类数量较多（>12个）时，水平放置便于阅读标签，如国家名称、长文本描述的分类。
+464 | 7
+465 | 分组条形图
+466 | 同分组柱形图，但分类标签长或数量多时，采用水平布局更清晰。
+467 | 8
+468 | 堆积条形图
+469 | 同堆积柱形图，但当分类数量较多或标签较长时，水平布局更佳。
+470 | 9
+471 | 对比柱形图
+472 | 需要展示正向和负向两类数据对比（如赞成vs反对），或围绕零基准线展现偏差。
+473 | 10
+474 | 蝴蝶图/龙卷风图
+475 | 两组数据在同一维度上对称对比，如男性和女性在不同年龄段的数量差异，强调双侧分布对比。
+476 | 11
+477 | 人口金字塔图
+478 | 展示人口年龄和性别结构，是蝴蝶图在人口学中的经典应用，也可用于其他双向分布数据。
+479 | 12
+480 | 瀑布图
+481 | 展示一个初始值经过一系列正向和负向变化后达到最终值的过程，适合财务损益拆解、预算变动分析。
+482 | 13
+483 | 直方图
+484 | 展示连续数值型数据的频率分布，帮助判断数据是否正态、有无异常值，适合探索性数据分析。
+485 | 14
+486 | 范围条形图/浮动条形图
+487 | 展示每个分类下数值的波动范围（如最小值到最大值），适合温度区间、价格区间等数据。
+488 | 15
+489 | 误差棒图
+490 | 在柱状图上添加误差线（标准差、标准误或置信区间），强调数据的变异程度或估计精度，适合实验数据展示。
+491 | 16
+492 | 棒棒糖图
+493 | 分类数量较多（>20个）时，用细线和圆点代替粗柱，视觉更清爽，同时保留数值对比功能。
+494 | 17
+495 | 点图
+496 | 需要轻量化展示数值，避免柱子的视觉重量，适合多系列叠加或强调单个数据点的重要性。
+497 | 18
+498 | 自定义标签柱形图
+499 | 需要在柱子上方、内部或旁边添加个性化文本（如百分比、排名、注释），常用于信息图或报告美化。
+500 | 19
+501 | 南丁格尔玫瑰图
+502 | 适合在极坐标下比较周期性或分类数据，尤其当数值相近时，比饼图更易区分，常用于美观展示。
+503 | 20
+504 | 重叠柱形图
+505 | 两组数据直接叠加并设置透明度，用于直观对比实际值与目标值、预测值与真实值等。
+506 | 先看数据维度：单一分类→基础柱形图；多系列→分组/堆积；双向数据→对比/蝴蝶图。
+507 | 再看样本数量：分类较多→优先水平条形图或棒棒糖图。
+508 | 最后看分析目的：看分布→直方图；看变化过程→瀑布图；看构成比→百分比堆积图。
+509 | 例图
+510 | 常规散点柱状图
+511 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247490587&idx=1&sn=9f3c0d14c2459afd6a0ff29d9e939152&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制高分文章中添加了“小点点”的柱状图？》
+512 | 2
+513 | 散点柱状图+云雨图
+514 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247551096&idx=1&sn=89ea475e0f2df5279d410dcd493b3c82&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制惊艳众人的云雨图+柱状图组合图？》
+515 | 3
+516 | 环形柱状图
+517 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247513067&idx=1&sn=f8828a4acdbeabb12c8d8956bf4e574e&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《Nature大佬们的同款环状条形图怎么画？一文拿捏住！》
+518 | 4
+519 | 环形堆叠柱状图
+520 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247513303&idx=1&sn=5575faa796d465ee34aa199302e81223&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制顶刊Nature同款环状堆叠柱形图？》
+521 | 5
+522 | 环形柱状图+散点柱状图组合
+523 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247544330&idx=1&sn=cf4b80b58a93b85a6e4e0d35dbc64e13&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制Nat Commun同款环状+散点柱形图组合图表？》
+524 | 6
+525 | 蝴蝶柱状图
+526 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247508283&idx=1&sn=cb70c53b1cecd0521084d613f6158487&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《炫一个共Y轴组合型条形图！太实用了！》
+527 | 7
+528 | 棒棒糖型蝴蝶柱状图
+529 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247555135&idx=1&sn=4a96b4d9211407163df62c29dd3ef6c2&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制顶刊棒棒糖蝴蝶图，直观展示组间特征差异？》
+530 | 8
+531 | 嵌套型柱状图
+532 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247536261&idx=1&sn=2ceabd147e2f160ab349c3829aef9dc6&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制“套在一起”的分组柱状图？》
+533 | 9
+534 | 差异火山图+上下调富集条形组合图
+535 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247554262&idx=1&sn=5b625a385743333f89791c986e30c7c0&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制高分差异火山图+上下调富集条形组合图？》
+536 | 10
+537 | 差异火山图+富集条形组合图（仅上调/下调）
+538 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247553331&idx=1&sn=30f6fc6bfbc5486d464cf28ac0db3b22&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何轻松绘制高分差异火山图+富集条形组合图？》
+539 | 11
+540 | 差异火山图+条形图组合
+541 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247543857&idx=1&sn=54a7a1a21231834dffdbf73095da3bf1&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制Nat Commun同款差异火山图+条形组合图？》
+542 | 12
+543 | 相关性热图+条形图组合
+544 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247554102&idx=1&sn=98db118c1bc694d671f7f4f76e4910a8&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制Nature同款相关性热图+条形图组合？》
+545 | 13
+546 | 热图+条形图组合
+547 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247546777&idx=1&sn=ba4faa3652ec597ed1e77a5182ab1c09&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《炫一个Nat Commun差异热图+富集条形图组合图表！》
+548 | 14
+549 | 富集通路条形图+棒棒糖图组合
+550 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247552398&idx=1&sn=b22191673f174a96216727789d218b4c&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何绘制Nat Commun同款特色富集通路条形图+棒棒糖组合？》
+551 | 15
+552 | 富集条形图叠加目标基因id
+553 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247538615&idx=1&sn=8cdb2388bd37300d8e508e048c5baa05&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《Nature复现！如何在富集条形图中展示通路目标基因？》
+554 | 16
+555 | 特色空行分类富集条形图
+556 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247521960&idx=1&sn=efec7d350ecee7feea6b4a4400fdeb76&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《复现一个分类富集条形图！》
+557 | 17
+558 | 富集条形图+折线图组合
+559 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzIyOTY3MDA3MA==&mid=2247512772&idx=1&sn=c38852872a31b64bde1a0d576f72a650&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《富集条形图还能玩出什么新花样？文章同款美美拿捏！》
+560 | 18
+561 | 特色上下调富集渐变条形图
+562 | HYPERLINK"https://mp.weixin.qq.com/s?__biz=MzA5NzQzOTgzMw==&mid=2651018588&idx=1&sn=500b3db4ae8dea3f51881ccdff896079&scene=21"\l"wechat_redirect"\t"https://mp.weixin.qq.com/_blank"《如何展示上下调基因？看看顶刊文章大佬是如何画图的》
+563 | 19
+564 | GO二级分类柱状图加线框标记
+566 | 20
+567 | 差异柱状图+代谢通路组合图
+569 | 4.常见的图形
+570 | 图型
+571 | 类型
+572 | 3D曲线图+多分组
+573 | 趋势曲线
+574 | Circle Packing
+575 | 综合图型
+576 | ECDF图
+577 | 综合图型
+578 | Venn
+579 | 综合图型
+580 | mantel test
+581 | 热图矩阵
+582 | tree+分支颜色调整+分组注释+热图注释+柱状堆积图注释
+583 | 树与序列
+584 | tree+柱状堆积图--物种组成可视化
+585 | 树与序列
+586 | 三角形热图+聚类+柱状图注释
+587 | 热图矩阵
+588 | 不同组散点+回归曲线+多项式拟合+线性拟合
+589 | 散点关系
+590 | 分组散点&箱线图&小提琴图&条形图+拟合曲线
+591 | 散点关系
+592 | 多组火山图：差异筛选、突变谱、GWAS或Top结果展示
+593 | 筛选结果
+594 | 小提琴图-添加数据点-半小提琴图-雨云图：组间差异、分布形态和连续变量比较
+595 | 分布比较
+596 | 散点+分组+置信圈+质心连线
+597 | 散点关系
+598 | 散点+回归曲线+多项式拟合+分组
+599 | 散点关系
+600 | 散点+多辅助线+特定区域颜色及标签标记：相关性、回归趋势、分组离散和局部结构展示
+601 | 散点关系
+602 | 散点+折线+局部放大
+603 | 散点关系
+604 | 散点+箱线图+小提琴图+辅助线+显著性
+605 | 散点关系
+606 | 散点图+拟合曲线+分面
+607 | 散点关系
+608 | 散点图+拟合曲线+边际组合图形
+609 | 散点关系
+610 | 散点图+柱状堆积图+折线图
+611 | 散点关系
+612 | 箱线图+组内显著性+组内线性回归分析趋势性P值
+613 | 散点关系
+614 | 5.3D混合图
+615 | 在竞赛中选择3D混合图时，关键在于数据是否具有三维或更高维度的复杂性。请记住，可视化的最终目的是为了更清晰地解释你的模型和结果，美观应服务于功能性
+616 | 图表类型
+617 | 混合构成
+618 | 典型数据特征
+619 | 3D柱状图+2D折线图（单Y轴）
+620 | 立体柱子（高度表示数值）+平面折线（可悬空或贴底）
+621 | 两组数据量级相近，既需对比各分类又需看趋势
+622 | 3D柱状图+2D折线图（双Y轴）
+623 | 3D柱子（左轴）+平面折线（右轴），量级或单位不同
+624 | 两类数据单位/量级差异大（如“吨”和“%”）
+625 | 3D曲面图+地形/等高线
+626 | 用于可视化三维空间中的连续曲面数据，如山体海拔、温度场、信号强度等。常与二维等高线图或散点图结合，展示地理或物理量的分布HYPERLINK"https://blog.csdn.net/weixin_39606048/article/details/113491675"\l"1"\t"https://chat.deepseek.com/a/chat/s/_blank"。
+627 | 2017年研究生数学建模竞赛A题（无人机在抢险救灾中的优化运用）：附件提供了震区的高程数据，参赛者通过surf函数绘制三维曲面图，直观展示灾区的复杂地形HYPERLINK"https://blog.csdn.net/weixin_39606048/article/details/113491675"\l"1"\t"https://chat.deepseek.com/a/chat/s/_blank"。
+628 | 3D热力图+二维分析
+629 | 用于同时分析三个维度的数据，通过颜色和高度（或柱体）表示数值大小，发现数据在三维空间中的分布模式和趋势。
+630 | 2023年全国大学生数学建模竞赛C题（蔬菜类商品的自动定价与补货决策）：使用三维热力图分析各蔬菜品类在不同年份和月份的销量分布规律
+631 | 3D散点/聚类图+透视效果
+632 | 用于展示高维数据在三维空间中的分布或聚类结果，并常通过添加透视效果增强立体感和可读性HYPERLINK"https://cloud.tencent.cn/developer/article/2022415?from=15425&frompage=seopage"\t"https://chat.deepseek.com/a/chat/s/_blank"。
+633 | 2020年美赛（MCM/ICM）"移动沙堆"相关题目：优秀论文中出现了带有透视效果的三维图像HYPERLINK"https://cloud.tencent.cn/developer/article/2022418?from=15425&frompage=seopage"\t"https://chat.deepseek.com/a/chat/s/_blank"HYPERLINK"https://blog.csdn.net/qq1198768105/article/details/122521608"\t"https://chat.deepseek.com/a/chat/s/_blank"。此外，也有论文使用三维聚类图来展示数据分组
+634 | 3D轨迹/路径图+二维平面
+635 | 用于展示物体在三维空间中的运动轨迹或路径规划，同时结合二维平面投影辅助理解。
+636 | 2018年"华为杯"研究生数学建模E题（多无人机对组网雷达的协同干扰）：涉及对无人机等运动目标进行三维轨迹的绘制与展示。
+637 | 3D模型/体积图+切片视图
+638 | 用于从三维立体数据中提取内部结构信息，常结合多视角切片图（俯视、侧视等）进行全面分析HYPERLINK"http://www.madio.net/archiver/tid-503628.html"\t"https://chat.deepseek.com/a/chat/s/_blank"。
+639 | 2001年全国大学生数学建模竞赛A题（血管的三维重建）：根据一系列二维切片图像，在三维空间中重建管道形态。也有题目通过surf函数从不同视角展示三维图像HYPERLINK"http://www.madio.net/archiver/tid-503628.html"\t"https://chat.deepseek.com/a/chat/s/_blank"。
+640 | 3D区域图+2D趋势线
+641 | 3D区域（比如立体条带）+平面折线（表示整体移动平均）
+642 | 展示多维数据变化及平滑趋势
+643 | 3D柱状图+2D误差棒（平面线）
+644 | 3D柱子+平面误差线（竖线或横线）
+645 | 实验数据，需展示均值及变异程度（SD/SE）
+646 | 所有图配色按照nature figure的风格为标准配色

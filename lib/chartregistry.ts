@@ -1,5 +1,8 @@
 import { RawTable, parseNumber } from "@/lib/data";
 import { Theme } from "@/lib/chartcore";
+import { columnSelection } from "./cluster";
+import { heatmap } from "./heatmap";
+import { EXPANDED_CHARTS } from "./charts-expanded";
 import {
   ChartModel, GroupModel, PairModel, SeqModel, SingleModel, LabelSeriesModel,
   XYModel, XLongModel, MatrixModel, VolcanoModel, EnrichModel, XYZModel, Bar3DModel,
@@ -64,7 +67,7 @@ export const SHAPE_HINT: Record<ShapeId, string> = {
   xy: "长表：每行一个点。示例表头：X, Y, Group（Group 可选）。用于散点与拟合。",
   xlong: "长表：每行一个观测。示例表头：Time, Series, Value。同一 Time×Series 多行重复用于均值±误差带。",
   matrix: "矩阵宽表：首列为行标签，其余数值列为列变量。示例表头：Gene, S1, S2, S3… 相关性热图请预先计算相关系数（-1…1）。",
-  volcano: "宽表：每行一个基因/特征。示例表头：Gene, log2FC, P。阈值固定 |log2FC|≥1 且 P<0.05。",
+  volcano: "宽表：每行一个基因/特征。示例表头：Gene, log2FC, P。|log2FC| 与 P/Q 阈值可在图形选项中调整。",
   enrich: "宽表：每行一个通路。示例表头：Term, Score, Direction, Genes。Direction 取 up/down/上调/下调；Genes 可选用于条末标注。",
   xyz: "长表：每行一个三维点。示例表头：X, Y, Z, Group（Group 可选）。",
   bar3d: "宽表：每行一个类别。示例表头：Month, Sales, Rate。柱与折线各自独立刻度。",
@@ -81,7 +84,7 @@ function cell(row: string[], i: number | undefined): string {
   return i === undefined ? "" : (row[i] ?? "").trim();
 }
 
-export function prepare(shape: ShapeId, table: RawTable, map: Record<string, number>): ChartModel | { error: string } {
+export function prepare(shape: ShapeId, table: RawTable, map: Record<string, number>, options?: PlotOpts): ChartModel | { error: string } {
   const rows = table.rows;
   const num = (r: string[], k: string) => parseNumber(cell(r, map[k]));
   if (shape === "long3" || shape === "long2") {
@@ -134,7 +137,10 @@ export function prepare(shape: ShapeId, table: RawTable, map: Record<string, num
     return { kind: "single", values, valueName: table.headers[map.value] ?? "Value" };
   }
   if (shape === "labelseries" || shape === "matrix") {
-    const numIdx = table.headers.map((_, i) => i).filter((i) => i !== map.row && rows.some((r) => parseNumber(cell(r, i)) !== null));
+    let selected: number[];
+    try { selected = shape === "matrix" ? columnSelection(options?.heat.columns ?? "",table.headers.length,map.row) : table.headers.map((_,i)=>i); }
+    catch(e) { return {error: e instanceof Error ? e.message : "列范围错误"}; }
+    const numIdx = selected.filter((i) => i !== map.row && rows.some((r) => parseNumber(cell(r, i)) !== null));
     if (numIdx.length < 1) return { error: "除标签列外至少需要 1 个数值列。" };
     const labels: string[] = []; const v: number[][] = [];
     for (const r of rows) {
@@ -579,13 +585,13 @@ function singleConclude(m: SingleModel, o: PlotOpts, ecdf: boolean): Conclusion 
   return { facts, inference, en };
 }
 
-function volcConclude(m: VolcanoModel): { facts: string[]; inference: string[]; en: string } {
-  const up = m.items.filter((i) => O.volcanoClass(i.fc, i.p) === "up");
-  const dn = m.items.filter((i) => O.volcanoClass(i.fc, i.p) === "down");
+function volcConclude(m: VolcanoModel,o:PlotOpts): { facts: string[]; inference: string[]; en: string } {
+  const up = m.items.filter((i) => O.volcanoClass(i.fc, i.p,o.fcCut,o.pCut) === "up");
+  const dn = m.items.filter((i) => O.volcanoClass(i.fc, i.p,o.fcCut,o.pCut) === "down");
   const topUp = [...up].sort((a, b) => a.p - b.p).slice(0, 3);
   const topDn = [...dn].sort((a, b) => a.p - b.p).slice(0, 3);
   const facts = [
-    `共 ${m.items.length} 个特征；按 |log2FC| ≥ 1 且 P < 0.05 筛选：上调 ${up.length} 个、下调 ${dn.length} 个、不显著 ${m.items.length - up.length - dn.length} 个。`,
+    `共 ${m.items.length} 个特征；按 |log2FC| ≥ ${o.fcCut} 且 P < ${o.pCut} 筛选：上调 ${up.length} 个、下调 ${dn.length} 个、不显著 ${m.items.length - up.length - dn.length} 个。`,
     `最显著上调：${topUp.map((i) => `${i.label}（log2FC = ${fmt(i.fc)}，P ${fmtP(i.p)}）`).join("、") || "无"}。`,
     `最显著下调：${topDn.map((i) => `${i.label}（log2FC = ${fmt(i.fc)}，P ${fmtP(i.p)}）`).join("、") || "无"}。`,
   ];
@@ -593,7 +599,7 @@ function volcConclude(m: VolcanoModel): { facts: string[]; inference: string[]; 
     `【推断】${up.length > dn.length ? "上调特征占优，提示处理倾向于激活相关程序" : dn.length > up.length ? "下调特征占优，提示处理倾向于抑制相关程序" : "上下调数量接近，提示双向重塑"}；差异筛选阈值（|log2FC| ≥ 1、P < 0.05）为惯例设定，敏感性分析可验证结论稳健性。`,
     "【局限】火山图展示的是统计显著性与变化幅度的联合分布，P 值未做多重检验校正时假阳性风险升高；建议报告 FDR（Benjamini-Hochberg）校正后的 q 值。",
   ];
-  const en = `Figure. Volcano plot of differential features. Dashed lines mark |log2FC| = 1 and P = 0.05; ${up.length} up-regulated and ${dn.length} down-regulated features were identified among ${m.items.length} tested.`;
+  const en = `Figure. Volcano plot of differential features. Dashed lines mark |log2FC| = ${o.fcCut} and P = ${o.pCut}; ${up.length} up-regulated and ${dn.length} down-regulated features were identified among ${m.items.length} tested.`;
   return { facts, inference, en };
 }
 
@@ -615,7 +621,7 @@ function enrichConclude(m: EnrichModel): { facts: string[]; inference: string[];
 export const CHARTS: ChartSpec[] = [
   {
     id: "grouped-bar", name: "散点柱状图（分组+误差棒+显著性）", family: "柱状/条形", shape: "long3", docRef: "文档 §2 与例图 1",
-    opts: ["bars", "points", "error", "sig", "showLegend"],
+    opts: ["bars", "points", "error", "sig", "showLegend","barWidth","jitter"],
     render: (m, _m2, t, o) => B.groupedBar(m as GroupModel, t, o),
     conclude: (m, _m2, o) => groupConclusion(m as GroupModel, o, false),
     sample: S.long3,
@@ -829,32 +835,20 @@ export const CHARTS: ChartSpec[] = [
     sample: S.xlong,
   },
   {
-    id: "heatmap", name: "热图/相关性热图（+边际条形组合）", family: "矩阵/热图", shape: "matrix", docRef: "例图 12/13",
-    opts: ["margBar", "cmap"],
-    render: (m, _m2, t, o) => R.heatMap(m as MatrixModel, t, o),
-    conclude: (m) => {
-      const mm = m as MatrixModel;
-      let best = { i: 0, j: 1, v: -Infinity };
-      for (let i = 0; i < mm.rows.length; i++) for (let j = 0; j < mm.cols.length; j++) {
-        if (i === j) continue;
-        if (Math.abs(mm.v[i][j]) > Math.abs(best.v)) best = { i, j, v: mm.v[i][j] };
-      }
-      const off: number[] = [];
-      for (let i = 0; i < mm.rows.length; i++) for (let j = 0; j < mm.cols.length; j++) if (i !== j) off.push(mm.v[i][j]);
-      const strong = off.filter((v) => Math.abs(v) >= 0.7).length;
-      return {
-        facts: [`${mm.rows.length} × ${mm.cols.length} 矩阵；最强非对角关联：${mm.rows[best.i]} × ${mm.cols[best.j]} = ${fmt(best.v)}；|r| ≥ 0.7 的单元 ${strong} 个；非对角均值 ${fmt(mean(off))}。`],
-        inference: [`【推断】${mm.rows[best.i]} 与 ${mm.cols[best.j]} 的强关联提示共调控或功能耦合；色标以 0 为中心时红/蓝分别表示正/负关联。`, "【局限】相关系数受样本量与离群点影响；热图聚类顺序（如有）会改变视觉模块，解释需结合统计检验。"],
-        en: `Figure. Heatmap of the ${mm.rows.length} × ${mm.cols.length} matrix; strongest off-diagonal association: ${mm.rows[best.i]} vs ${mm.cols[best.j]} (r = ${fmt(best.v)}).`,
-      };
+    id: "heatmap", name: "热图（聚类树 / 分组注释 / Z-score）", family: "热图工具", shape: "matrix", docRef: "OmicShare 热图参数 · 独立实现",
+    opts: ["cmap"],
+    render: (m, _m2, t, o) => heatmap(m as MatrixModel, t, o),
+    conclude: (m,_,o) => {
+      const mm=m as MatrixModel,values=mm.v.flat();
+      return {facts:[`${mm.rows.length} × ${mm.cols.length} 矩阵；输入值范围 ${fmt(Math.min(...values))}–${fmt(Math.max(...values))}；Z-score: ${o.heat.normalize}；距离: ${o.heat.distance}；连接: ${o.heat.linkage}。`],inference:["热图展示输入矩阵的数值模式；表达量不应直接解释为相关系数。聚类相近不构成差异显著或因果关系证据。"],en:`Heatmap of ${mm.rows.length} rows and ${mm.cols.length} columns, with ${o.heat.normalize} scaling and ${o.heat.linkage} linkage.`};
     },
     sample: S.matrix,
   },
   {
     id: "volcano", name: "差异火山图", family: "组学/富集", shape: "volcano", docRef: "例图 9–11",
-    opts: ["showLegend"],
+    opts: ["showLegend","fcCut","pCut","topN"],
     render: (m, _m2, t, o) => O.volcanoPlot(m as VolcanoModel, t, o),
-    conclude: (m) => volcConclude(m as VolcanoModel),
+    conclude: (m,_,o) => volcConclude(m as VolcanoModel,o),
     sample: S.volcano,
   },
   {
@@ -866,10 +860,10 @@ export const CHARTS: ChartSpec[] = [
   },
   {
     id: "volcano-enrich", name: "火山图+富集条形组合图", family: "组学/富集", shape: "volcano", shape2: "enrich", docRef: "例图 9–11",
-    opts: ["lollipop", "genes", "gaps"],
+    opts: ["lollipop", "genes", "gaps","fcCut","pCut","topN"],
     render: (m, m2, t, o) => O.volcanoEnrich(m as VolcanoModel, (m2 ?? { kind: "enrich", terms: [] }) as EnrichModel, t, o),
-    conclude: (m, m2) => {
-      const a = volcConclude(m as VolcanoModel);
+    conclude: (m, m2,o) => {
+      const a = volcConclude(m as VolcanoModel,o);
       const b = m2 ? enrichConclude(m2 as EnrichModel) : { facts: [], inference: [], en: "" };
       return { facts: [...a.facts, ...b.facts], inference: [...a.inference, ...b.inference], en: `${a.en} Right panel: enrichment of regulated features. ${b.en}` };
     },
@@ -1136,6 +1130,8 @@ export const CHARTS: ChartSpec[] = [
     sample: S.surface,
   },
 ];
+
+CHARTS.push(...EXPANDED_CHARTS);
 
 export function autoMap(shape: ShapeId, table: RawTable): Record<string, number> {
   const fields = SHAPE_FIELDS[shape];

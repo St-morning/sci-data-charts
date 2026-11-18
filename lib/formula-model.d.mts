@@ -1,0 +1,3 @@
+export function configureTexTeller(env: {allowLocalModels:boolean;fetch:(input:string|URL,init?:unknown)=>Promise<unknown>}):void;
+export function texTellerProcessor(images: import('@huggingface/transformers').RawImage[], Tensor: typeof import('@huggingface/transformers').Tensor): Promise<{pixel_values:import('@huggingface/transformers').Tensor}>;
+export function recognizeFormula(recognizer:import('@huggingface/transformers').ImageToTextPipeline,image:string|import('@huggingface/transformers').RawImage,Tensor:typeof import('@huggingface/transformers').Tensor,RawImage:typeof import('@huggingface/transformers').RawImage,maxTokens?:number):Promise<string>;

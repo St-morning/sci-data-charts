@@ -41,7 +41,7 @@ export function ellipseScatter(m: XYModel, t: Theme, o: PlotOpts): Rendered {
     const l1 = Math.max(0, half + disc), l2 = Math.max(0, half - disc);
     const theta = 0.5 * Math.atan2(2 * sxy, sxx - syy);
     const ra = Math.sqrt(5.991 * l1), rb = Math.sqrt(5.991 * l2);
-    if (pts.length >= 3 && ra > 0) {
+    if (o.band && pts.length >= 3 && ra > 0) {
       let d = "";
       for (let k = 0; k <= 72; k++) {
         const ang = (k / 72) * 2 * Math.PI;
@@ -52,7 +52,10 @@ export function ellipseScatter(m: XYModel, t: Theme, o: PlotOpts): Rendered {
       }
       s += `<path d="${d}Z" fill="${col}" fill-opacity="0.08" stroke="${col}" stroke-width="2.5" stroke-opacity="0.9"/>`;
     }
-    for (const p of pts) s += `<circle cx="${f.X(p.x)}" cy="${f.Y(p.y)}" r="6" fill="${col}" fill-opacity="0.75"/>`;
+    for (const p of pts) {
+      s += `<circle cx="${f.X(p.x)}" cy="${f.Y(p.y)}" r="6" fill="${col}" fill-opacity="${o.opacity}"><title>${esc(p.label??groups[gi])}: ${p.x}, ${p.y}</title></circle>`;
+      if(o.showLabels&&p.label)s+=`<text x="${f.X(p.x)+9}" y="${f.Y(p.y)-7}" fill="${t.text}" font-size="${t.tickFont*.75}">${esc(p.label)}</text>`;
+    }
     const cx = f.X(mx), cy = f.Y(my);
     s += `<line x1="${cx - 11}" y1="${cy}" x2="${cx + 11}" y2="${cy}" stroke="${col}" stroke-width="3.5"/>`;
     s += `<line x1="${cx}" y1="${cy - 11}" x2="${cx}" y2="${cy + 11}" stroke="${col}" stroke-width="3.5"/>`;

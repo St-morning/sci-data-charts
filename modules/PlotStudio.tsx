@@ -4,17 +4,22 @@ import { Download, FileImage, Palette, ClipboardCopy, Type, SlidersHorizontal, B
 import { ModuleHeader, Panel, DropZone, Field, Note } from "@/components/shared";
 import { parseFile, parseCSVText, type RawTable } from "@/lib/data";
 import { PALETTES, CMAPS, svgDocument, downloadSvg, downloadBlob, svgToPngBlob, scaleChartGeometry, sigLegendSvg, SIG_LEGEND, esc, type Theme } from "@/lib/chartcore";
-import { DEFAULT_OPTS, type PlotOpts, type ChartModel } from "@/lib/chartmodel";
+import { DEFAULT_OPTS, DEFAULT_HEATMAP, type PlotOpts, type ChartModel } from "@/lib/chartmodel";
 import { CHARTS, SHAPE_FIELDS, SHAPE_HINT, autoMap, prepare, type ChartSpec } from "@/lib/chartregistry";
 import { generateInsights, type AnalysisMode } from "@/lib/chartinsights";
 import { auditSvg } from "@/lib/chartqa";
 import { addPanel, uid } from "@/lib/store";
+import { HeatmapControls } from "@/components/HeatmapControls";
+import { sequenceTable } from "@/lib/charts-expanded";
+import { SvgElementEditor, editSvg, type ElementEdits } from "@/components/SvgElementEditor";
+import {exportSvgPdf} from "@/lib/pdf-export";
 
 const BOOL_LABEL: Record<string, string> = {
   points: "显示数据点", bars: "显示柱体", percent: "百分比堆积", lollipop: "棒棒糖样式",
   band: "置信/误差带", margBar: "边际条形面板", genes: "基因 ID 标注", gaps: "分类空行分隔",
   stems: "底面投影茎", contour: "底面等高投影", showLegend: "显示图例",
   sigLegend: "显著性图例（ns / * 含义）",
+  standardize: "特征 Z-score 标准化", showLabels: "显示标签",
 };
 
 const FONT_OPTIONS: Record<string, string> = {
@@ -25,6 +30,15 @@ const FONT_OPTIONS: Record<string, string> = {
   微软雅黑: "'Microsoft YaHei', 'PingFang SC', sans-serif",
   宋体: "SimSun, 'Songti SC', serif",
 };
+
+function chartCategory(c:ChartSpec):string {
+  if(["热图工具","动态交互","功能分析","聚类分析","差异检验","序列处理"].includes(c.family))return c.family;
+  if(c.family==="组学/富集")return c.shape==="volcano"?"差异检验":"功能分析";
+  if(c.family==="临床/评价")return "差异检验";
+  if(c.family==="流/网络"||c.family==="3D 混合")return "动态交互";
+  if(c.family.includes("矩阵"))return "热图工具";
+  return "基础绘图";
+}
 
 interface ReportPreset {
   widthCm: number; fontKey: string; tickPt: number; labelPt: number; titlePt: number; legendPt: number;
@@ -169,20 +183,28 @@ export default function PlotStudio() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pngBusy, setPngBusy] = useState(false);
+  const [pdfBusy,setPdfBusy]=useState(false);
+  const [elementEdits,setElementEdits]=useState<ElementEdits>({});
+  const [selectedElement,setSelectedElement]=useState("");
+  const [category,setCategory]=useState("全部");
+  const [search,setSearch]=useState("");
+  const [bounds,setBounds]=useState<Record<string,string>>({});
 
   const families = useMemo(() => {
     const byFamily = new Map<string, ChartSpec[]>();
-    for (const c of CHARTS) {
+    for (const c of CHARTS.filter(c=>(category === "全部" || chartCategory(c) === category) && `${c.name} ${c.family}`.toLowerCase().includes(search.toLowerCase()))) {
       if (!byFamily.has(c.family)) byFamily.set(c.family, []);
       byFamily.get(c.family)!.push(c);
     }
     return [...byFamily.entries()].map(([name, specs]) => ({ name, specs }));
-  }, []);
+  }, [category,search]);
 
   function selectSpec(id: string) {
     const sp = CHARTS.find((c) => c.id === id)!;
     const t = sp.sample();
     setSpecId(id);
+    setOpts({...DEFAULT_OPTS,heat:{...DEFAULT_HEATMAP,normalize:["binary-heatmap","sample-correlation"].includes(id)?"none":"row"}});
+    setBounds({});
     setTable(t);
     setMap(autoMap(sp.shape, t));
     if (sp.shape2 && sp.sample2) {
@@ -197,7 +219,7 @@ export default function PlotStudio() {
 
   async function onFiles(files: File[], second: boolean) {
     try {
-      const t = await parseFile(files[0]);
+      const t = /\.(fa|fasta|fna|faa)$/i.test(files[0].name) && specId.startsWith("sequence-") ? sequenceTable(await files[0].text(), specId === "sequence-logo" ? "logo" : "length") : await parseFile(files[0]);
       if (t.rows.length === 0) { toast.error("文件为空或无法解析"); return; }
       const shape = second ? spec.shape2! : spec.shape;
       if (second) { setTable2(t); setMap2(autoMap(shape, t)); }
@@ -245,13 +267,15 @@ export default function PlotStudio() {
       fontScale: tickFont / 22,
       fontFamily: FONT_OPTIONS[fontKey],
       tickFont,
+      unitsPerPt: units(1),
+      axisBounds: Object.fromEntries(Object.entries(bounds).filter(([,v])=>v.trim()!==""&&Number.isFinite(Number(v))).map(([k,v])=>[k,Number(v)])),
       labelFont: units(labelPt),
       titleFont: units(titlePt),
       legendFont: units(legendPt),
       grid: showGrid,
       showAxisLabels: opts.showAxisLabels,
     };
-  }, [paletteName, overrides, textColor, axisColor, bgMode, bgColor, fontKey, tickPt, labelPt, titlePt, legendPt, widthCm, showGrid, opts.showAxisLabels]);
+  }, [paletteName, overrides, textColor, axisColor, bgMode, bgColor, fontKey, tickPt, labelPt, titlePt, legendPt, widthCm, showGrid, opts.showAxisLabels,bounds]);
 
   const effectiveOpts = useMemo<PlotOpts>(() => ({
     ...opts,
@@ -260,7 +284,7 @@ export default function PlotStudio() {
     yLabel: opts.showAxisLabels ? opts.yLabel : "",
   }), [opts]);
 
-  const prepared = useMemo(() => prepare(spec.shape, table, map), [spec, table, map]);
+  const prepared = useMemo(() => prepare(spec.shape, table, map, opts), [spec, table, map, opts]);
   const prepared2 = useMemo(() => (spec.shape2 && table2 ? prepare(spec.shape2, table2, map2) : null), [spec, table2, map2]);
   const model = "error" in prepared ? null : prepared;
   const model2 = prepared2 && !("error" in prepared2) ? prepared2 : null;
@@ -275,21 +299,24 @@ export default function PlotStudio() {
       let h = r.h;
       const hasSig = effectiveOpts.sig !== "none" && spec.opts.includes("sig");
       if (effectiveOpts.sigLegend && hasSig && !inner.includes("ns P≥0.05")) {
-        inner += sigLegendSvg(theme, 14, h + 20);
-        h += 34;
+        inner += sigLegendSvg(theme, r.w / 2, h + Math.max(24, theme.legendFont), undefined, true);
+        h += Math.max(42, theme.legendFont * 1.8);
       }
+      inner=editSvg(inner,elementEdits);
       return { inner, w: r.w, h };
     } catch (e) {
       return { error: e instanceof Error ? e.message : String(e) };
     }
-  }, [spec, model, model2, theme, effectiveOpts, lineScale, pointScale, renames]);
+  }, [spec, model, model2, theme, effectiveOpts, lineScale, pointScale, renames,elementEdits]);
   const renderError = rendered && "error" in rendered ? rendered.error : null;
+  const exportWidth = rendered && !("error" in rendered) && (spec.family === "热图工具" || spec.id === "sample-correlation") ? widthCm * rendered.w / 1000 : widthCm;
   const svg = useMemo(() => {
     if (!rendered || "error" in rendered) return "";
-    return svgDocument(rendered.inner, rendered.w, rendered.h, widthCm, theme);
-  }, [rendered, widthCm, theme]);
+    return svgDocument(rendered.inner, rendered.w, rendered.h, exportWidth, theme);
+  }, [rendered, exportWidth, theme]);
 
   useEffect(() => { setRenames({}); }, [specId, table]);
+  useEffect(()=>{setElementEdits({});setSelectedElement("");},[specId,table]);
 
   const qa = useMemo(() => {
     if (!svg || !rendered || "error" in rendered) return null;
@@ -298,17 +325,18 @@ export default function PlotStudio() {
 
   const renameCandidates = useMemo(() => modelStrings(model), [model]);
 
-  function addToCompose() {
+  async function addToCompose() {
     if (!svg || !rendered || "error" in rendered) return;
-    addPanel({ id: uid(), name: opts.title || spec.name, kind: "svg", svg, w: rendered.w, h: rendered.h, createdAt: Date.now() });
-    toast.success("已加入排版工作台", { action: { label: "去排版", onClick: () => { window.location.hash = "#/compose"; } } });
+    try {await addPanel({ id: uid(), name: opts.title || spec.name, kind: "svg", svg, w: rendered.w, h: rendered.h, createdAt: Date.now() });
+    toast.success("已加入排版工作台", { action: { label: "去排版", onClick: () => { window.location.hash = "#/compose"; } } });}
+    catch(e){toast.error(e instanceof Error?e.message:"保存失败");}
   }
 
   const conclusion = useMemo(() => {
     if (!model) return null;
     try { return spec.conclude(model, model2, effectiveOpts); } catch { return null; }
   }, [spec, model, model2, effectiveOpts]);
-  const insights = useMemo(() => model ? generateInsights(model, model2, analysisMode) : null, [model, model2, analysisMode]);
+  const insights = useMemo(() => model ? generateInsights(model, model2, analysisMode,effectiveOpts) : null, [model, model2, analysisMode,effectiveOpts]);
 
   const nColors = colorCount(model);
   const labels = colorLabels(model);
@@ -321,8 +349,8 @@ export default function PlotStudio() {
     if (!svg || !rendered || "error" in rendered) return;
     setPngBusy(true);
     try {
-      const heightCm = (widthCm * rendered.h) / rendered.w;
-      const blob = await svgToPngBlob(svg, widthCm, heightCm, 600);
+      const heightCm = (exportWidth * rendered.h) / rendered.w;
+      const blob = await svgToPngBlob(svg, exportWidth, heightCm, 600);
       downloadBlob(`${spec.id}-600dpi.png`, blob);
       toast.success("已导出 600 dpi PNG（含物理分辨率元数据）");
     } catch (e) {
@@ -332,12 +360,24 @@ export default function PlotStudio() {
     }
   }
 
+  async function exportPdf(){
+    if(!svg||!rendered||"error" in rendered)return;
+    setPdfBusy(true);
+    try{await exportSvgPdf(`${spec.id}.pdf`,svg,exportWidth,exportWidth*rendered.h/rendered.w);toast.success("已导出 PDF（600 dpi，保留中文与排版）");}
+    catch(e){toast.error(e instanceof Error?e.message:"PDF 导出失败");}
+    finally{setPdfBusy(false);}
+  }
+
   async function copy(text: string, label: string) {
     try { await navigator.clipboard.writeText(text); toast.success(`${label}已复制`); }
     catch { toast.error("复制失败，请手动选择文本"); }
   }
 
   const optControl = (k: keyof PlotOpts) => {
+    const numeric: Partial<Record<keyof PlotOpts,[string,number,number,number]>> = {fcCut:["|log2FC| 阈值",0,20,.1],pCut:["P / Q 阈值",.000001,1,.001],topN:["显示前 N 个条目",1,200,1],opacity:["图元透明度",0,1,.05],barWidth:["柱宽比例",.1,1,.05],jitter:["散点抖动比例",0,1,.05],clusterK:["聚类个数 K",2,12,1],pcX:["横轴主成分",1,20,1],pcY:["纵轴主成分",1,20,1],donutHole:["环形内径比例",.05,.9,.05],startAngle:["起始角度 °",-180,180,5],nodeRadius:["网络节点半径",2,50,1],edgeWidth:["网络边线宽度",.1,12,.1]};
+    const cfg=numeric[k];
+    if(cfg)return <label key={k} className="block text-xs">{cfg[0]}<input aria-label={cfg[0]} type="number" min={cfg[1]} max={cfg[2]} step={cfg[3]} className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm" value={opts[k] as number} onChange={e=>setOpt(k,Math.max(cfg[1],Math.min(cfg[2],Number(e.target.value))) as never)}/></label>;
+    if(k === "distance") return <Field key={k} label="PCoA 距离"><select aria-label="PCoA 距离" value={opts.distance} onChange={e=>setOpt("distance",e.target.value as PlotOpts["distance"])}><option value="euclidean">Euclidean</option><option value="bray">Bray–Curtis</option></select></Field>;
     if (k in BOOL_LABEL) return (
       <label key={k} className="flex min-h-9 items-center gap-2 rounded-md border border-border px-2.5 text-sm">
         <input type="checkbox" checked={Boolean(opts[k])} onChange={(e) => setOpt(k, e.target.checked as never)} className="size-4 accent-[var(--site-accent)]" />
@@ -403,22 +443,24 @@ export default function PlotStudio() {
   return (
     <div>
       <ModuleHeader
-        code="MOD-06"
+        code="MOD-01"
         title="科研与 BI 绘图工作台"
         desc={`${CHARTS.length} 种图形统一支持数据映射、期刊配色、报告级字体字号与线宽控制、坐标轴和误差线开关、显著性星号含义图例与图内中英文文字改写；导出前自动检查文字碰撞、越界与遮挡，可一键加入多图排版。`}
       />
       <div className="mb-4 flex flex-wrap gap-2 text-xs">
         {[`${CHARTS.length} 种图形`, "字体 / 字号 / 线宽", "文字遮挡质量门", "图内文字中英改写", "SVG + 600 dpi PNG"].map((x) => <span key={x} className="rounded-full border border-border bg-card px-2.5 py-1 text-muted-foreground">{x}</span>)}
       </div>
+      <nav aria-label="绘图类别" className="mb-4 flex flex-wrap gap-2">{["全部","动态交互","功能分析","基础绘图","聚类分析","差异检验","序列处理","热图工具"].map(name=><button type="button" key={name} aria-pressed={category===name} onClick={()=>setCategory(name)} className={`rounded-lg border border-border px-3 py-2 text-sm ${category===name?"bg-primary text-primary-foreground":"bg-card"}`}>{name} <span className="text-xs opacity-70">{CHARTS.filter(c=>name==="全部"||chartCategory(c)===name).length}</span></button>)}</nav>
       <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
         <Panel title={`图形库 · ${CHARTS.length}`} className="self-start lg:sticky lg:top-4">
+          <input aria-label="搜索图形" placeholder="搜索图形名称" value={search} onChange={e=>setSearch(e.target.value)} className="mb-3 w-full rounded border border-border bg-background p-2 text-xs"/>
           <div className="max-h-[72vh] space-y-3 overflow-y-auto pr-1">
             {families.map((f) => (
               <div key={f.name}>
                 <p className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground">{f.name}</p>
                 <div className="space-y-0.5">
                   {f.specs.map((c) => (
-                    <button key={c.id} type="button" onClick={() => selectSpec(c.id)} className={`block w-full rounded-md px-2 py-1.5 text-left text-xs leading-snug transition-colors ${c.id === specId ? "bg-primary/10 font-medium text-primary" : "hover:bg-secondary"}`}>
+                    <button key={c.id} data-chart-id={c.id} type="button" onClick={() => selectSpec(c.id)} className={`block w-full rounded-md px-2 py-1.5 text-left text-xs leading-snug transition-colors ${c.id === specId ? "bg-primary/10 font-medium text-primary" : "hover:bg-secondary"}`}>
                       {c.name}
                     </button>
                   ))}
@@ -444,7 +486,7 @@ export default function PlotStudio() {
             )}
             <div className="mt-3 grid gap-3 xl:grid-cols-2">
               <div className="space-y-3">
-                <DropZone compact accept=".csv,.tsv,.txt,.xlsx,.xls" hint="主数据：CSV / TSV / Excel" onFiles={(f) => onFiles(f, false)} />
+                <DropZone compact accept=".csv,.tsv,.txt,.xlsx,.xls,.fa,.fasta,.fna,.faa" hint={specId.startsWith("sequence-")?"FASTA / 频数矩阵 / CSV":"主数据：CSV / TSV / Excel"} onFiles={(f) => onFiles(f, false)} />
                 <MappingSelects shape={spec.shape} table={table} map={map} onChange={setMap} />
                 {(spec.shape === "matrix" || spec.shape === "labelseries") && <p className="text-xs text-muted-foreground">除行标签列外，其余数值列自动作为列变量 / 系列参与绘图。</p>}
                 <TablePeek table={table} />
@@ -466,7 +508,8 @@ export default function PlotStudio() {
               aside={
                 <div className="flex gap-2">
                   <button type="button" disabled={!svg} onClick={() => { downloadSvg(`${spec.id}.svg`, svg); toast.success("已导出可编辑 SVG"); }} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-40"><Download className="size-3.5" aria-hidden />SVG</button>
-                  <button type="button" disabled={!svg || pngBusy} onClick={exportPng} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-40"><FileImage className="size-3.5" aria-hidden />{pngBusy ? "渲染中…" : "PNG 600 dpi"}</button>
+                  <button type="button" disabled={!svg || pngBusy || pdfBusy} onClick={exportPng} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-40"><FileImage className="size-3.5" aria-hidden />{pngBusy ? "渲染中…" : "PNG 600 dpi"}</button>
+                  <button type="button" disabled={!svg||pdfBusy||pngBusy} onClick={()=>void exportPdf()} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-40"><Download className="size-3.5" aria-hidden />{pdfBusy?"生成 PDF…":"PDF"}</button>
                 </div>
               }
             >
@@ -475,7 +518,8 @@ export default function PlotStudio() {
               </div>
               {renderError && <Note tone="warn">渲染失败：{renderError}</Note>}
               {!model && !prepError && <Note>等待数据…</Note>}
-              {svg && <div className="overflow-x-auto rounded-lg border border-border bg-white p-3 shadow-inner"><div className="mx-auto" style={{ maxWidth: 860 }} dangerouslySetInnerHTML={{ __html: svg }} /></div>}
+              {svg && <div className="overflow-x-auto rounded-lg border border-border bg-white p-3 shadow-inner"><div className="mx-auto" style={{ maxWidth: 860 }} onClick={e=>{const target=(e.target as Element).closest('[data-edit-id]');if(target)setSelectedElement(target.getAttribute('data-edit-id')??"");}} dangerouslySetInnerHTML={{ __html: svg }} /></div>}
+              {svg&&<SvgElementEditor svg={svg} selected={selectedElement} onSelect={setSelectedElement} edits={elementEdits} onChange={setElementEdits}/>}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button type="button" disabled={!svg} onClick={addToCompose} className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:opacity-40"><LayoutGrid className="size-3.5" aria-hidden />加入多图排版</button>
                 <span className="text-[11px] text-muted-foreground">在「多图排版」中组合成期刊 Figure（A/B/C 面板）。</span>
@@ -500,7 +544,7 @@ export default function PlotStudio() {
                   ) : <p className="mt-2 text-[11px] text-muted-foreground">未检测到文字碰撞、越界或低对比度遮挡；最小字号 ≥ 5 pt，符合期刊可读性下限。</p>}
                 </div>
               )}
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">字号按导出物理尺寸换算为 pt；线宽和数据点半径同步作用于全部图元。SVG 可在 Illustrator / Inkscape 中编辑，PNG 写入 600 dpi pHYs 元数据。</p>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">SVG 为可编辑矢量图；PNG 写入 600 dpi 元数据；PDF 内嵌 600 dpi 图像，页面保持当前物理尺寸、中文和字体外观（PDF 不是可编辑矢量图）。</p>
             </Panel>
 
             <Panel title="03 · 图形规范" className="self-start">
@@ -519,7 +563,7 @@ export default function PlotStudio() {
                   </Field>
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="出版宽度">
-                      <select className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm" value={widthCm} onChange={(e) => { setWidthCm(Number(e.target.value)); setPreset("自定义"); }}><option value={8.5}>8.5 cm 单栏</option><option value={12}>12 cm 1.5 栏</option><option value={17}>17 cm 双栏</option></select>
+                      <input aria-label="出版宽度 cm" type="number" min={4} max={100} step={0.5} className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm" value={widthCm} onChange={(e) => { setWidthCm(Math.max(4,Math.min(100,Number(e.target.value)))); setPreset("自定义"); }}/>
                     </Field>
                     <Field label="全图字体">
                       <select className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm" value={fontKey} onChange={(e) => { setFontKey(e.target.value); setPreset("自定义"); }}>{Object.keys(FONT_OPTIONS).map((f) => <option key={f} value={f}>{f}</option>)}</select>
@@ -535,6 +579,7 @@ export default function PlotStudio() {
                       <input type="range" min={0.5} max={2} step={0.05} value={pointScale} onChange={(e) => { setPointScale(Number(e.target.value)); setPreset("自定义"); }} className="w-full accent-[var(--site-accent)]" />
                     </Field>
                   </div>
+                  <div className="grid grid-cols-2 gap-2">{([["xMin","X 轴最小值"],["xMax","X 轴最大值"],["yMin","Y 轴最小值"],["yMax","Y 轴最大值"]] as const).map(([key,label])=><label key={key} className="text-xs">{label}<input aria-label={label} type="number" step="any" placeholder="自动" value={bounds[key]??""} onChange={e=>setBounds({...bounds,[key]:e.target.value})} className="h-9 w-full rounded border border-border bg-background px-2"/></label>)}</div>
                   <div className="space-y-2 rounded-lg border border-border p-3">
                     <p className="text-xs font-semibold">坐标轴标签</p>
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={opts.showAxisLabels} onChange={(e) => setOpt("showAxisLabels", e.target.checked)} className="size-4 accent-[var(--site-accent)]" />显示 X / Y 轴标题</label>
@@ -571,7 +616,9 @@ export default function PlotStudio() {
               {styleTab === "options" && (
                 <div className="space-y-3">
                   <Field label="图标题"><input className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm" value={opts.title} onChange={(e) => setOpt("title", e.target.value)} placeholder="可选" /></Field>
-                  <div className="grid gap-2 sm:grid-cols-2">{spec.opts.filter((k) => k !== "error").map(optControl)}</div>
+                  <div className="grid gap-2 sm:grid-cols-2">{[...new Set([...spec.opts.filter((k) => k !== "error"),...(spec.id === "grouped-bar" ? ["barWidth","jitter"] as const : [])])].map(optControl)}</div>
+                  {["heatmap","binary-heatmap","dot-heatmap","bubble-heatmap","sample-correlation"].includes(spec.id) && <HeatmapControls value={opts.heat} onChange={heat=>setOpt("heat",heat)}/>}
+                  {spec.shape === "matrix" && !["heatmap","binary-heatmap","dot-heatmap","bubble-heatmap","sample-correlation"].includes(spec.id) && <div className="space-y-3"><Field label="矩阵绘图列范围"><input aria-label="矩阵绘图列范围" value={opts.heat.columns} placeholder="2-4,6-8；留空自动" onChange={e=>setOpt("heat",{...opts.heat,columns:e.target.value})} className="w-full rounded border border-border bg-background p-2 text-sm"/></Field>{["pca","pcoa","kmeans"].includes(spec.id)&&<Field label="样本分组注释" hint="每行：样本名,分组名；K-means 由算法分组"><textarea aria-label="样本分组注释" value={opts.heat.groups} onChange={e=>setOpt("heat",{...opts.heat,groups:e.target.value})} className="w-full rounded border border-border bg-background p-2 text-sm"/></Field>}{spec.id==="hca"&&<><Field label="聚类距离"><select aria-label="聚类距离" value={opts.heat.distance} onChange={e=>setOpt("heat",{...opts.heat,distance:e.target.value as typeof opts.heat.distance})}><option value="euclidean">Euclidean</option><option value="manhattan">Manhattan</option><option value="correlation">1 − Pearson r</option></select></Field><Field label="聚类连接方法"><select aria-label="聚类连接方法" value={opts.heat.linkage} onChange={e=>setOpt("heat",{...opts.heat,linkage:e.target.value as typeof opts.heat.linkage})}><option value="average">Average</option><option value="single">Single</option><option value="complete">Complete</option></select></Field></>}{spec.id==="circular-heatmap"&&<><Field label="环状热图归一化"><select value={opts.heat.normalize} onChange={e=>setOpt("heat",{...opts.heat,normalize:e.target.value as typeof opts.heat.normalize})}><option value="row">Row</option><option value="column">Column</option><option value="both">Both</option><option value="none">None</option></select></Field><Field label="环状热图自定义颜色"><input value={opts.heat.customColors} onChange={e=>setOpt("heat",{...opts.heat,customColors:e.target.value})} placeholder="#008000,#000000,#ff0000"/></Field></>}</div>}
                   {spec.opts.includes("sig") && !spec.opts.includes("sigLegend") && (
                     <label className="flex min-h-9 items-center gap-2 rounded-md border border-border px-2.5 text-sm">
                       <input type="checkbox" checked={opts.sigLegend} onChange={(e) => setOpt("sigLegend", e.target.checked)} className="size-4 accent-[var(--site-accent)]" />

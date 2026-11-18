@@ -347,7 +347,7 @@ export default function FigureAudit() {
   return (
     <div>
       <ModuleHeader
-        code="MOD-01"
+        code="MOD-02"
         title="论文图表自动复核"
         desc="上传插图并填写图注与坐标轴标签，自动检查单位、有效数字、误差棒声明、颜色辨识度（含三种色觉模拟）与图文结论一致性。检查为启发式规则，最终判断以人工复核为准。"
       />

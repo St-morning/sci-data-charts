@@ -1,80 +1,79 @@
-# sci-data-charts · 科研数图工作台
+# 科研数图工作台 · sci-data-charts
 
-让数据看得见。一个基于 React、TypeScript、Vite 和 Tailwind CSS 的浏览器科研数据工作台。
-
-## 功能
-
-- 论文图表复核：单位、有效数字、误差棒声明、颜色辨识度及图文一致性检查。
-- 数据转论文段落：导入 Excel / CSV，清洗数据、计算描述统计、执行 Welch t 检验或单因素 ANOVA，并生成结果与讨论初稿。
-- 图片防误用检测：重复、镜像、裁剪重叠和比例尺候选检查。
-- 跨批次对比：样品对齐、方差分解和排序一致性分析。
-- 数据故事板：组织研究问题、实验设计、发现、证据和结论。
-- 科研 / BI 绘图：53 种图形、配色、字体、误差线、SVG 与 600 dpi PNG 导出。
-- 多图自动排版：网格组合、面板编号和统一栏宽。
-- 公式截图转 LaTeX：本地 OCR、KaTeX 预览和模板插入。
-  
-## 浏览
-# 主页
-
-<img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/b4740e17-80bb-424e-8613-3de6f92b4bf1" />
-
-- 53种图形库可供选择 包含组合图 热力图等  
-- 可调整： 图形规范 出版样式 配色 图形选项 图内文字 
-- 可生成600dpi Png Svg Pdf格式
-
-<img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/32d1ef3d-724a-41f8-8699-92f1bd398310" />
-
-<img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/d48f755f-6e90-4108-89d1-07de39d87a95" />
-
-- 公式转--->Latex
-
-<img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/86e24ef0-617f-4c7f-adc8-1cf7dc01fe53" />
-
-- 多图自动排版
-
-<img width="1910" height="878" alt="image" src="https://github.com/user-attachments/assets/fc7468e4-09d6-41e4-946b-af4dfed40a1d" />
-
-数据分析在浏览器中进行；部分工作区内容保存在浏览器本地存储。OCR 运行时可能需要联网下载引擎和语言模型。统计结论及自动生成文本应由研究者复核。
-
-## 本地运行
-
-需要 Node.js `^22.13.0 || >=24.0.0`。
+提供 73 种图形，科研 / BI 绘图已移至 MOD-01。原有工具依次顺延，公式识别仍为 MOD-08。
 
 ```sh
 npm ci
 npm run dev
 ```
 
-打开终端显示的本地地址。构建和预览：
+Node.js 需要 `^22.13.0 || >=24.0.0`。构建：`npm run build`；图形和数值检查：`npm run check:charts`；公式模型实测：`npm run check:formula`。
+
+热图参数、图形类别、新增图形和覆盖边界见 [docs/plotting-upgrade.md](docs/plotting-upgrade.md)。公式识别默认使用 TexTeller 专用模型，在浏览器本机推理，首次需从 Hugging Face 下载约 316 MB 模型并缓存；截图不上传。
+
+以下保留初始模板的开发与可选服务端说明。
+
+## 原始模板说明
+
+A React, TypeScript, Vite and Tailwind frontend with a bundled Shadcn component catalog. Vite produces static files in `dist/`. Server behavior belongs in the optional Qoder Sites Function, not a Node or framework server.
+
+## Develop
+
+Use a Node version accepted by `package.json` (`^22.13.0 || >=24.0.0`). Select an installed compatible runtime and keep it selected for installation, development and build:
+
+```sh
+npm ci
+npm run dev
+```
+
+Use the loopback URL printed by Vite. Edit `src/App.tsx`, `src/globals.css` and the title/description in `index.html`. Replace the sample page with the requested product before presenting a first meaningful preview. Import existing UI primitives from `@/components/ui/<component>` and compose them for the site's design. The neutral starter theme is a starting point, not the finished visual direction.
+
+For production output:
 
 ```sh
 npm run build
 npm run preview
 ```
 
-`build` 会先运行严格 TypeScript 检查，再生成 `dist/`。部署时发布 `dist/` 中的静态文件；模块使用 hash 路由。
+The build fixes `NODE_ENV=production` before loading Vite, independently of the terminal environment. It checks the frontend and bundled component types and emits `dist/index.html` and assets. `npm run preview` serves this output locally. Reuse passing checks while source is unchanged; no additional unit-test suite or browser QA is required by the template.
 
-## 目录
+## Optional Function
 
-- `src/`：应用入口、导航和全局样式。
-- `modules/`：八个功能模块。
-- `lib/`：数据解析、统计、绘图、图像处理和本地存储。
-- `components/`、`hooks/`：共享组件及 hooks。
-- `functions/`：可选的 Deno 示例接口，前端核心功能不依赖它。
-- `dev/`：本地接口入口和合成图像测试素材。
-- `vendor/`：保留的第三方样式及许可证。
-
-可选接口需要安装 Deno：
+The default page is entirely static and does not call a Function. For server behavior, adapt the public, credential-free example in `functions/handler.ts`. `functions/index.ts` is the Deno deployment entry point. Check `deno --version` before using a separate terminal for:
 
 ```sh
 npm run check:function
 npm run dev:function
 ```
 
-Vite 的开发和预览服务器会将 `/functions/v1/app` 代理到 `127.0.0.1:8000`。
+If Deno is unavailable, the static frontend can still build and run. Keep Function validation pending until Deno or an equivalent existing Function checker is available; `npm run build` checks the frontend only. Local proxy requests also need a running compatible Function server.
 
-## 当前版本说明
+The local service binds to `127.0.0.1:8000`; Vite development and built preview proxy `/functions/v1/app` to it, preserving the path. Probe with an available HTTP tool or Node `fetch`; with `curl` installed, for example:
 
-本次上传保留现有功能实现。已知待改进项包括：导入 SVG 的安全清理、`xlsx` / `zod` 依赖安全问题、本地存储容量不足时的错误反馈、批次残差表述，以及部分组名的重复后缀。目前未配置自动化测试与 Lint；`npm run build` 包含前端类型检查。
+```sh
+curl --fail 'http://127.0.0.1:5173/functions/v1/app?name=Visitor'
+```
 
-源代码不包含 `node_modules/`、`dist/`、环境变量文件、本地工作台元数据或文档摘录。第三方来源说明见 [PROVENANCE.md](PROVENANCE.md)。
+Use Vite's actual port if it differs. The same frontend request after deployment is routed by Qoder Sites. Local proxy configuration is not production routing. Keep local-only servers and fixtures in `dev/`, outside both publication directories. The included Function has no dependencies; add self-contained runtime imports as required. Frontend npm dependencies are not automatically installed in Functions.
+
+## Publish with Qoder Sites
+
+Open a local conversation in this project and follow the `sites-hosting` skill. Workspace registration is optional. Use the directory returned by `get_context` with:
+
+- `webDirectory: "dist"` after the build.
+- `spa: false` for the default single page; use `true` when adding client-side deep routes that need fallback.
+- `functionDirectory: "functions"` only if the application uses the Function. Omit it for static-only delivery.
+
+The Sites tools prepare artifacts and generate the publication descriptor; publish completed hosted work by default, unless the user explicitly requests a preview first or defers publication. Do not upload the project root, `node_modules`, `dev`, or source as the web artifact. A successful build or release does not prove an external integration works.
+
+For a new database-backed React page, follow the installed `sites-building` Skill's `references/function-backend.md`. Its assembled `assets/function-backend/` example includes `Notes.tsx`, Function routes and a schema using the platform's private database credentials. For a runnable records-and-attachments workbench, use that Skill's `references/records-example.md`; its setup command assembles a new project from this starter and keeps local fixtures outside deployment outputs. Preserve and adapt its application identity and ownership checks before exposing private records. `references/database.md`, `assets/database-react/App.tsx` and `assets/database-function/` are for existing legacy allocations only. These optional assets stay in the Skill rather than being copied into every static project.
+
+For database or Storage, follow the corresponding `sites-building` references and `sites-management` capability workflow. For AI, follow `sites-build-agent-app` and keep Cloud Agents access in the Function. Application credentials belong in server-side Sites Settings; frontend environment variables are public. This starter does not implement visitor login, database permissions, Cloud resource coordination or QCA sessions; add those only for the requested feature using the existing skills.
+
+See `PROVENANCE.md` and `vendor/` for source attribution and the preserved stylesheet license.
+
+After copying the starter, rename `gitignore.template` to `.gitignore` before installing dependencies. This keeps the file available in npm and bundled CLI resources.
+
+## Design workbench
+
+On Desktop, call `open_design_workbench` with the project name and design registration (pages and implemented Nudge capabilities). The tool creates the single `.站点名称.qoder.site` entry; update it through `update_design_workbench`. The starter deliberately contains no fixed-name project entry. Components consume `--site-*` variables defined in the existing application stylesheet. The workbench only previews temporary overrides and attaches requested changes to chat. The Agent implements changes and prepares publication artifacts before reporting completion; no dedicated theme file is required.

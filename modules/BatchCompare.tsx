@@ -149,14 +149,14 @@ export default function BatchCompare() {
     if (batchSig && dec.shareBatch > dec.shareSample) {
       verdict = {
         status: "fail",
-        title: "变化主要来自测试误差 / 批次效应",
+        title: "批次效应占比高于样品间差异",
         detail: `批次效应显著（F = ${fmt(dec.fBatch, 3)}，p ${fmtP(dec.pBatch)}），且批次间方差占比 ${(dec.shareBatch * 100).toFixed(0)}% 超过样品间占比 ${(dec.shareSample * 100).toFixed(0)}%。当前数据中的「差异」更可能反映日期/仪器/操作条件，而非样品本身。建议先做批次校正（均值平移或参考样品比值），或用混合效应模型把批次作为随机效应。`,
       };
     } else if (!batchSig && sampleSig && dec.icc >= 0.75) {
       verdict = {
         status: "pass",
         title: "变化主要来自样品本身",
-        detail: `批次效应不显著（p ${fmtP(dec.pBatch)}），样品效应显著（p ${fmtP(dec.pSample)}），跨批次一致性 ICC = ${fmt(dec.icc, 2)}（≥0.75）。样品间差异相对测量误差足够大，跨批次比较可信。`,
+        detail: `批次效应未达显著（p ${fmtP(dec.pBatch)}），样品效应显著（p ${fmtP(dec.pSample)}），跨批次一致性 ICC = ${fmt(dec.icc, 2)}（≥0.75）。样品间差异相对残差较大；残差包含样品×批次交互和测量误差，当前无重复设计无法区分，仍需独立重复验证。`,
       };
     } else if (batchSig) {
       verdict = {
@@ -168,7 +168,7 @@ export default function BatchCompare() {
       verdict = {
         status: "warn",
         title: "证据不足：样品与批次效应均不显著",
-        detail: `样品效应 p ${fmtP(dec.pSample)}、批次效应 p ${fmtP(dec.pBatch)}，ICC = ${fmt(dec.icc, 2)}。测量误差占比 ${(dec.shareError * 100).toFixed(0)}%，可能掩盖了真实差异。建议增加每批次重复测量次数以降低误差方差，或扩大样品间预期差异。`,
+        detail: `样品效应 p ${fmtP(dec.pSample)}、批次效应 p ${fmtP(dec.pBatch)}，ICC = ${fmt(dec.icc, 2)}。残差（样品×批次交互＋测量误差）占比 ${(dec.shareError * 100).toFixed(0)}%，可能掩盖了样品差异。建议增加样品×批次单元内的重复测量，以区分交互和测量误差。`,
       };
     }
     if (isFinite(rankCorr)) {
@@ -184,7 +184,7 @@ export default function BatchCompare() {
     notes.push({
       status: "info",
       title: `方差分解（样品 ${dec.nSamples} × 批次 ${dec.nBatches}，无重复双因素模型）`,
-      detail: `样品间 ${(dec.shareSample * 100).toFixed(1)}% · 批次间 ${(dec.shareBatch * 100).toFixed(1)}% · 残差（测量误差）${(dec.shareError * 100).toFixed(1)}%。ICC(一致性) = ${fmt(dec.icc, 3)}。残差包含测量误差与样品×批次交互，二者在无重复设计下不可分离。`,
+      detail: `样品间 ${(dec.shareSample * 100).toFixed(1)}% · 批次间 ${(dec.shareBatch * 100).toFixed(1)}% · 残差（样品×批次交互＋测量误差）${(dec.shareError * 100).toFixed(1)}%。ICC(一致性) = ${fmt(dec.icc, 3)}。交互和测量误差在无重复设计下不可分离，不能将残差单独视为测量误差。`,
     });
     if (dropped.length > 0) {
       notes.push({
@@ -215,9 +215,9 @@ export default function BatchCompare() {
   return (
     <div>
       <ModuleHeader
-        code="MOD-04"
+        code="MOD-05"
         title="跨实验批次对比平台"
-        desc="上传不同日期 / 仪器 / 批次的数据（每文件一个批次，按样品 ID 对齐），用无重复双因素方差分解把总变异拆成样品间、批次间与测量误差三部分，判断变化来自样品本身还是测试误差。"
+        desc="上传不同日期 / 仪器 / 批次的数据（每文件一个批次，按样品 ID 对齐），用无重复双因素方差分解评估样品间、批次间与残差（样品×批次交互＋测量误差）；此设计不能单独估计测量误差。"
       />
       <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
         <div className="space-y-5">
@@ -335,12 +335,12 @@ export default function BatchCompare() {
                   <div className="flex h-6 w-full overflow-hidden rounded-md border border-border" role="img" aria-label="方差占比条">
                     <div style={{ width: `${result.dec.shareSample * 100}%`, background: "var(--chart-1)" }} title={`样品间 ${(result.dec.shareSample * 100).toFixed(1)}%`} />
                     <div style={{ width: `${result.dec.shareBatch * 100}%`, background: "var(--chart-2)" }} title={`批次间 ${(result.dec.shareBatch * 100).toFixed(1)}%`} />
-                    <div style={{ width: `${result.dec.shareError * 100}%`, background: "var(--chart-5)" }} title={`测量误差 ${(result.dec.shareError * 100).toFixed(1)}%`} />
+                    <div style={{ width: `${result.dec.shareError * 100}%`, background: "var(--chart-5)" }} title={`残差（交互作用＋测量误差） ${(result.dec.shareError * 100).toFixed(1)}%`} />
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--chart-1)" }} />样品间 {(result.dec.shareSample * 100).toFixed(1)}%</span>
                     <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--chart-2)" }} />批次间 {(result.dec.shareBatch * 100).toFixed(1)}%</span>
-                    <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--chart-5)" }} />测量误差 {(result.dec.shareError * 100).toFixed(1)}%</span>
+                    <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: "var(--chart-5)" }} />残差（交互作用＋测量误差） {(result.dec.shareError * 100).toFixed(1)}%</span>
                   </div>
                 </div>
               </Panel>

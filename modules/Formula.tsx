@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import { toast } from "sonner";
-import { downloadBlob } from "@/lib/chartcore";
+import { downloadBlob, esc } from "@/lib/chartcore";
 import { ClipboardPaste, Copy, Download, Eraser, ScanLine, Sigma } from "lucide-react";
 
 const SYMBOL_MAP: [RegExp, string][] = [
@@ -72,16 +72,45 @@ export default function Formula() {
   const [latex, setLatex] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "recognizing" | "done" | "error">("idle");
   const [progress, setProgress] = useState(0);
-  const [autoSub, setAutoSub] = useState(true);
+  const [autoSub, setAutoSub] = useState(false);
   const [autoFrac, setAutoFrac] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const requestId = useRef(0);
+  const [engine,setEngine]=useState<"math"|"text">("math");
+  const [maxTokens,setMaxTokens]=useState(384);
+  const [modelFile,setModelFile]=useState("");
+  const [recognitionError,setRecognitionError]=useState("");
+  useEffect(()=>()=>{workerRef.current?.terminate();if(imgRef.current)URL.revokeObjectURL(imgRef.current.src);},[]);
 
   const recognize = useCallback(async (img: HTMLImageElement) => {
+    const id=++requestId.current;
+    setRaw("");setLatex("");setRecognitionError("");
     setStatus("loading");
     setProgress(0);
     try {
+      if(engine === "math") {
+        workerRef.current?.terminate();
+        const worker=new Worker(new URL("../lib/formula.worker.ts",import.meta.url),{type:"module"});
+        workerRef.current=worker;
+        const canvas=document.createElement("canvas");
+        const scale=Math.min(1,2400/Math.max(img.naturalWidth,img.naturalHeight));
+        canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+        const ctx=canvas.getContext("2d")!;ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
+        worker.onmessage=(e:MessageEvent<{id:number;type:string;text?:string;error?:string;progress?:number;file?:string}>)=>{
+          if(e.data.id!==requestId.current)return;
+          const d=e.data;
+          if(d.type==="progress"){setProgress(Math.round(d.progress??0));setModelFile(d.file??"");}
+          if(d.type==="recognizing")setStatus("recognizing");
+          if(d.type==="result"){const text=(d.text??"").trim().replace(/^\\\[|\\\]$/g,"").replace(/^\$\$?|\$\$?$/g,"").trim();setRaw(d.text??"");setLatex(text);setStatus("done");toast.success("公式模型识别完成，请对照截图核对");}
+          if(d.type==="error"){setStatus("error");setRecognitionError(d.error??"模型加载失败");toast.error("公式模型加载或识别失败，请检查模型下载连接");}
+        };
+        worker.onerror=()=>{if(id===requestId.current){setStatus("error");setRecognitionError("识别线程启动失败，请刷新后重试");}};
+        worker.postMessage({id,image:canvas.toDataURL("image/png"),maxTokens});
+        return;
+      }
       const canvas = preprocess(img);
       const { createWorker } = await import("tesseract.js");
       const worker = await createWorker("eng", 1, {
@@ -92,6 +121,7 @@ export default function Formula() {
       try {
         const { data } = await worker.recognize(canvas);
         const text = data.text ?? "";
+        if(id!==requestId.current)return;
         setRaw(text);
         setLatex(toLatex(text, autoSub, autoFrac));
         setStatus("done");
@@ -104,13 +134,14 @@ export default function Formula() {
       setStatus("error");
       toast.error(e instanceof Error ? `识别失败：${e.message}` : "识别失败，首次使用需联网下载 OCR 模型");
     }
-  }, [autoSub, autoFrac]);
+  }, [autoSub, autoFrac,engine,maxTokens]);
 
   const loadFile = useCallback((f: File) => {
     if (!f.type.startsWith("image/")) { toast.error("请提供图片文件（PNG / JPG）"); return; }
     const url = URL.createObjectURL(f);
     const img = new Image();
     img.onload = () => {
+      if(imgRef.current)URL.revokeObjectURL(imgRef.current.src);
       imgRef.current = img;
       setPreview(url);
       void recognize(img);
@@ -134,7 +165,7 @@ export default function Formula() {
     try {
       return katex.renderToString(latex, { throwOnError: true, displayMode: true, strict: false });
     } catch (e) {
-      return `<span style="color:#ff7a5c">语法待修正：${e instanceof Error ? e.message.replace(/</g, "&lt;") : "未知错误"}</span>`;
+      return `<span style="color:#ff7a5c">语法待修正：${esc(e instanceof Error ? e.message : "未知错误")}</span>`;
     }
   })();
 
@@ -155,12 +186,13 @@ export default function Formula() {
       <header>
         <span className="num text-xs tracking-widest text-muted-foreground uppercase">08 / FORMULA OCR</span>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">公式截图 → LaTeX</h1>
-        <p className="mt-1 text-sm text-muted-foreground">粘贴或上传公式截图，本地 OCR 识别后转换为 LaTeX，实时 KaTeX 预览。识别结果为草稿，投稿前请逐项核对符号、上下标与括号。</p>
+        <p className="mt-1 text-sm text-muted-foreground">专用 TexTeller 公式模型直接识别分式、根号、上下标和矩阵，输出 LaTeX 并实时预览。识别在浏览器本地执行。</p>
       </header>
 
       <div className="grid items-start gap-5 xl:grid-cols-2">
         <section className="rounded-xl border border-border bg-card p-4">
           <h2 className="flex items-center gap-2 text-sm font-semibold"><ScanLine className="size-4 text-primary" aria-hidden />截图输入</h2>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-xs"><label>识别引擎<select aria-label="识别引擎" disabled={busy} value={engine} onChange={e=>setEngine(e.target.value as typeof engine)} className="mt-1 w-full rounded border border-border bg-background p-2"><option value="math">TexTeller 专用公式模型（推荐）</option><option value="text">英文文字 OCR（仅简单线性文本）</option></select></label><label>最大输出长度<select aria-label="最大输出长度" value={maxTokens} onChange={e=>setMaxTokens(Number(e.target.value))} className="mt-1 w-full rounded border border-border bg-background p-2"><option value={192}>192 tokens · 短公式</option><option value={384}>384 tokens · 标准</option><option value={768}>768 tokens · 矩阵 / 多行</option></select></label></div>
           <div
             role="button"
             tabIndex={0}
@@ -183,7 +215,7 @@ export default function Formula() {
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = ""; }} />
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
             <button type="button" disabled={!imgRef.current || busy} onClick={() => imgRef.current && void recognize(imgRef.current)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40">
-              <ScanLine className="size-3.5" aria-hidden />{busy ? (status === "loading" ? "加载 OCR 模型…" : `识别中 ${progress}%`) : "重新识别"}
+              <ScanLine className="size-3.5" aria-hidden />{busy ? (status === "loading" ? "加载 OCR 模型…" : engine === "math" ? "识别公式结构…" : `识别中 ${progress}%`) : "重新识别"}
             </button>
             <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={autoSub} onChange={(e) => setAutoSub(e.target.checked)} className="accent-[var(--site-accent)]" />字母+数字自动下标</label>
             <label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={autoFrac} onChange={(e) => setAutoFrac(e.target.checked)} className="accent-[var(--site-accent)]" />a/b 自动转分式</label>
@@ -195,7 +227,10 @@ export default function Formula() {
               <pre className="mt-2 whitespace-pre-wrap text-muted-foreground">{raw}</pre>
             </details>
           )}
-          <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">OCR 在本机浏览器内运行（tesseract.js），截图不会上传；首次识别需联网下载英文模型。手写体、复杂分式与矩阵识别率有限，请用下方模板与编辑框修正。</p>
+          {busy&&<button type="button" onClick={()=>{requestId.current++;workerRef.current?.terminate();workerRef.current=null;setStatus("idle");}} className="mt-2 text-xs underline">取消公式识别</button>}
+          {modelFile&&busy&&<p className="mt-2 break-all text-xs text-muted-foreground">模型文件：{modelFile} · {progress}%</p>}
+          {recognitionError&&<p role="alert" className="mt-2 text-xs text-destructive">{recognitionError}</p>}
+          <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">专用模型直接输出公式结构，首次需下载约 316 MB 的量化模型并缓存，需能访问 huggingface.co。截图不上传。文字 OCR 仅用于简单文本，自动下标/分式规则仅作用于文字 OCR；复杂公式建议裁剪成单条后识别。</p>
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4">

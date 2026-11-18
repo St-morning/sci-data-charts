@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import {CHARTS,prepare,autoMap} from '../lib/chartregistry';
+import {DEFAULT_OPTS,DEFAULT_HEATMAP} from '../lib/chartmodel';
+import {columnSelection,normalizeMatrix,hierarchy} from '../lib/cluster';
+import {heatmap} from '../lib/heatmap';
+import {ordination,sequenceTable} from '../lib/charts-expanded';
+import {volcanoClass} from '../lib/charts-omics';
+import type {Theme} from '../lib/chartcore';
+const t:Theme={colors:['#E64B35','#4DBBD5','#00A087','#3C5488','#F39B7F','#8491B4','#91D1C2','#DC0000'],text:'#111111',axis:'#444444',bg:'#ffffff',fontScale:1,fontFamily:'Arial',tickFont:22,labelFont:25,titleFont:28,legendFont:22,unitsPerPt:22/7,grid:false,showAxisLabels:true};
+const failures:string[]=[];
+for(const spec of CHARTS){try {const table=spec.sample(),o={...DEFAULT_OPTS,heat:{...DEFAULT_HEATMAP}},m=prepare(spec.shape,table,autoMap(spec.shape,table),o);assert(!('error'in m),'error'in m?m.error:'');const m2=spec.sample2&&spec.shape2?(()=>{const tb=spec.sample2!();const x=prepare(spec.shape2!,tb,autoMap(spec.shape2!,tb));assert(!('error'in x));return x;})():null;const r=spec.render(m,m2,t,o);assert(r.w>0&&r.h>0);assert(!/(?:NaN|Infinity)/.test(r.inner),'Non-finite SVG');assert(r.inner.length>50);const c=spec.conclude(m,m2,o);assert(c.facts.length);console.log('PASS',spec.id);}catch(e){failures.push(`${spec.id}: ${e}`);}}
+assert.deepEqual(columnSelection('2-4，6-8',8,0),[1,2,3,5,6,7]);assert.throws(()=>columnSelection('1,3',5,0));assert.throws(()=>columnSelection('2-99',5,0));
+const z=normalizeMatrix([[1,2,3],[9,9,9]],'row');assert(Math.abs(z[0].reduce((a,b)=>a+b,0))<1e-10);assert.deepEqual(z[1],[0,0,0]);
+const tree=hierarchy([[0],[.1],[10]],'euclidean','average');assert(tree.ids.indexOf(0)+1===tree.ids.indexOf(1));assert(tree.height>9);
+const m={kind:'matrix' as const,rows:['G1','G2'],cols:['S1','S2','S3'],v:[[1,2,3],[2,4,6]]};
+const p=ordination(m,{...DEFAULT_OPTS,standardize:false},'pca');assert(p.xy.xName.includes('100.0%'));assert(p.xy.yName.includes('0.0%'));
+const r=heatmap(m,t,{...DEFAULT_OPTS,heat:{...DEFAULT_HEATMAP,normalize:'none',clusterRows:false,clusterCols:false,cellWidth:5,cellHeight:5,numbers:true,groups:'S1,A\nS2,A\nS3,B',groupColors:'#ff0000,#0000ff'}});assert(r.inner.includes('6.00'));const cellWidth=Number(r.inner.match(/<rect\b[^>]*?\swidth="([\d.]+)"/)?.[1]);assert(Math.abs(cellWidth-5*(22/7)*72/25.4)<1e-9);assert(!r.inner.includes('NaN'));
+assert.equal(volcanoClass(1.5,.01,2,.05),'ns');assert.equal(volcanoClass(1.5,.01,1,.05),'up');
+const seq=sequenceTable('>a\nACGT\n>b\nAGGT','logo');assert.deepEqual(seq.headers,['Position','A','C','G','T']);assert.throws(()=>sequenceTable('>a\nAA\n>b\nAAA','logo'));
+if(failures.length)throw new Error(failures.join('\n'));console.log(`Verified ${CHARTS.length} chart samples and numerical parameter checks.`);

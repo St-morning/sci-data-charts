@@ -3,6 +3,8 @@ import { toast } from "sonner";
 import { addPanel, loadPanels, savePanels, uid, type PanelItem } from "@/lib/store";
 import { downloadBlob, downloadSvg, esc, svgToPngBlob } from "@/lib/chartcore";
 import { auditSvg } from "@/lib/chartqa";
+import {svgPanel,isRasterDataUrl} from "@/lib/svg-safety";
+import {exportSvgPdf} from "@/lib/pdf-export";
 import { ArrowDown, ArrowUp, Download, FileImage, LayoutGrid, Plus, Trash2, Upload } from "lucide-react";
 
 const LABEL_STYLES = [
@@ -20,13 +22,6 @@ function panelLabel(style: string, i: number): string {
   return "";
 }
 
-function svgInner(svg: string): { inner: string; w: number; h: number } {
-  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
-  const root = doc.documentElement;
-  const vb = (root.getAttribute("viewBox") ?? "0 0 1000 700").split(/[\s,]+/).map(Number);
-  return { inner: root.innerHTML, w: vb[2] || 1000, h: vb[3] || 700 };
-}
-
 export default function Compose() {
   const [panels, setPanels] = useState<PanelItem[]>(() => loadPanels());
   const [cols, setCols] = useState(0);
@@ -40,12 +35,13 @@ export default function Compose() {
   useEffect(() => {
     const onStorage = () => setPanels(loadPanels());
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener("scibench:workspacechange",onStorage);
+    return () => {window.removeEventListener("storage", onStorage);window.removeEventListener("scibench:workspacechange",onStorage);};
   }, []);
 
   const refresh = () => setPanels(loadPanels());
 
-  const update = (list: PanelItem[]) => { savePanels(list); setPanels(list); };
+  const update = (list: PanelItem[]) => { setPanels(list);void savePanels(list).then(result=>{if(!result.ok)toast.error(result.message,{id:"panel-save-error"});}); };
   const move = (i: number, d: number) => {
     const j = i + d;
     if (j < 0 || j >= panels.length) return;
@@ -61,8 +57,8 @@ export default function Compose() {
       try {
         if (f.type === "image/svg+xml" || f.name.endsWith(".svg")) {
           const text = await f.text();
-          const { w, h } = svgInner(text);
-          addPanel({ id: uid(), name: f.name.replace(/\.svg$/i, ""), kind: "svg", svg: text, w, h, createdAt: Date.now() });
+          const { w, h,svg:cleaned } = svgPanel(text);
+          await addPanel({ id: uid(), name: f.name.replace(/\.svg$/i, ""), kind: "svg", svg: cleaned, w, h, createdAt: Date.now() });
         } else if (f.type.startsWith("image/")) {
           const dataUrl = await new Promise<string>((res, rej) => {
             const r = new FileReader();
@@ -76,7 +72,8 @@ export default function Compose() {
             img.onerror = () => rej(new Error("图片解析失败"));
             img.src = dataUrl;
           });
-          addPanel({ id: uid(), name: f.name.replace(/\.[^.]+$/, ""), kind: "image", dataUrl, w: dim.w, h: dim.h, createdAt: Date.now() });
+          if(!isRasterDataUrl(dataUrl))throw new Error("仅支持 PNG / JPG / GIF / WebP 位图");
+          await addPanel({ id: uid(), name: f.name.replace(/\.[^.]+$/, ""), kind: "image", dataUrl, w: dim.w, h: dim.h, createdAt: Date.now() });
         } else {
           toast.error(`不支持的文件：${f.name}`);
           continue;
@@ -119,6 +116,7 @@ export default function Compose() {
     const { W, H, rows } = layout;
     const ink = "#111111";
     let inner = "";
+    let error="";
     let idx = 0;
     for (const row of rows) {
       for (const it of row.items) {
@@ -127,10 +125,15 @@ export default function Compose() {
           inner += `<text x="${it.x}" y="${it.y - 10}" fill="${ink}" font-size="30" font-weight="bold">${esc(label)}</text>`;
         }
         if (it.p.kind === "svg" && it.p.svg) {
-          const { inner: pi } = svgInner(it.p.svg);
-          inner += `<svg x="${it.x.toFixed(1)}" y="${it.y.toFixed(1)}" width="${it.w.toFixed(1)}" height="${it.h.toFixed(1)}" viewBox="0 0 ${it.p.w} ${it.p.h}">${pi}</svg>`;
+          try {const panel=svgPanel(it.p.svg),root=new DOMParser().parseFromString(panel.svg,"image/svg+xml").documentElement;
+          const ids=new Map(Array.from(root.querySelectorAll('[id]')).map(el=>[el.id,`panel-${idx}-${el.id}`]));
+          for(const el of [root,...Array.from(root.querySelectorAll('*'))])for(const attr of Array.from(el.attributes)){if(attr.name==='id'&&ids.has(attr.value))el.setAttribute('id',ids.get(attr.value)!);else if(attr.value.startsWith('#')&&ids.has(attr.value.slice(1))&&attr.localName==='href')el.setAttribute(attr.name,`#${ids.get(attr.value.slice(1))}`);else if(attr.value.startsWith('url(#')){const id=attr.value.slice(5,-1);if(ids.has(id))el.setAttribute(attr.name,`url(#${ids.get(id)})`);}}
+          root.setAttribute("x",String(it.x));root.setAttribute("y",String(it.y));root.setAttribute("width",String(it.w));root.setAttribute("height",String(it.h));
+          inner+=new XMLSerializer().serializeToString(root);
+          } catch(e){error=`面板 ${it.p.name} 无法安全解析：${e instanceof Error?e.message:"无效 SVG"}`;}
         } else if (it.p.dataUrl) {
-          inner += `<image href="${it.p.dataUrl}" x="${it.x.toFixed(1)}" y="${it.y.toFixed(1)}" width="${it.w.toFixed(1)}" height="${it.h.toFixed(1)}" preserveAspectRatio="xMidYMid meet"/>`;
+          if(isRasterDataUrl(it.p.dataUrl))inner += `<image href="${esc(it.p.dataUrl)}" x="${it.x.toFixed(1)}" y="${it.y.toFixed(1)}" width="${it.w.toFixed(1)}" height="${it.h.toFixed(1)}" preserveAspectRatio="xMidYMid meet"/>`;
+          else error=`面板 ${it.p.name} 含不支持的图片地址，请重新导入位图。`;
         }
         idx++;
       }
@@ -138,7 +141,7 @@ export default function Compose() {
     const bgRect = bg === "white" ? `<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>` : "";
     const heightCm = (widthCm * H) / W;
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthCm}cm" height="${heightCm.toFixed(3)}cm" viewBox="0 0 ${W} ${H}" font-family="Arial, 'Noto Sans SC', sans-serif">${bgRect}${inner}</svg>`;
-    return { svg, inner: bgRect + inner, W, H, heightCm };
+    return { svg, inner: bgRect + inner, W, H, heightCm,error };
   }, [layout, labelStyle, bg, widthCm]);
 
   const qa = useMemo(() => {
@@ -151,7 +154,7 @@ export default function Compose() {
   }, [composite, panels.length, widthCm]);
 
   const exportPng = async () => {
-    if (!panels.length) return;
+    if (!panels.length || composite.error) return;
     setBusy(true);
     try {
       const blob = await svgToPngBlob(composite.svg, widthCm, composite.heightCm, 600);
@@ -162,6 +165,14 @@ export default function Compose() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const exportPdf=async()=>{
+    if(!panels.length||composite.error)return;
+    setBusy(true);
+    try{await exportSvgPdf("figure-composite.pdf",composite.svg,widthCm,composite.heightCm);toast.success("已导出组合图 PDF（600 dpi）");}
+    catch(e){toast.error(e instanceof Error?e.message:"PDF 导出失败");}
+    finally{setBusy(false);}
   };
 
   return (
@@ -271,10 +282,12 @@ export default function Compose() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="flex items-center gap-2 text-sm font-semibold"><FileImage className="size-4 text-primary" aria-hidden />组合预览 · {widthCm} cm · {layout.c} 列</h2>
             <div className="flex gap-2">
-              <button type="button" disabled={!panels.length} onClick={() => { downloadSvg("figure-composite.svg", composite.svg); toast.success("已导出组合 SVG（可编辑）"); }} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:opacity-40"><Download className="size-3.5" aria-hidden />SVG</button>
-              <button type="button" disabled={!panels.length || busy} onClick={() => void exportPng()} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40"><Download className="size-3.5" aria-hidden />{busy ? "导出中…" : "PNG · 600 dpi"}</button>
+              <button type="button" disabled={!panels.length||!!composite.error} onClick={() => { downloadSvg("figure-composite.svg", composite.svg); toast.success("已导出组合 SVG（可编辑）"); }} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:opacity-40"><Download className="size-3.5" aria-hidden />SVG</button>
+              <button type="button" disabled={!panels.length || busy||!!composite.error} onClick={() => void exportPng()} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-40"><Download className="size-3.5" aria-hidden />{busy ? "导出中…" : "PNG · 600 dpi"}</button>
+              <button type="button" disabled={!panels.length||busy||!!composite.error} onClick={()=>void exportPdf()} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:opacity-40"><Download className="size-3.5" aria-hidden />PDF</button>
             </div>
           </div>
+          {composite.error&&<p role="alert" className="mt-3 text-sm text-destructive">{composite.error}</p>}
           {panels.length === 0 ? (
             <button
               type="button"
@@ -293,6 +306,7 @@ export default function Compose() {
             </div>
           )}
           <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">面板按各自比例缩放到统一列宽并垂直居中；编号遵循 Nature 风格（小写粗体 a/b/c）。位图面板放大超过原始分辨率时会降低清晰度，建议优先使用绘图工作台导出的 SVG。</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">PDF 保持当前页面物理尺寸并内嵌 600 dpi 图像；需要可编辑矢量图请使用 SVG。</p>
         </section>
       </div>
     </div>

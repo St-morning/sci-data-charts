@@ -192,7 +192,7 @@ export default function DataParagraph() {
   async function saveToStoryboard() {
     if (!analysis) return;
     const chartDataUrl = chartRef.current ? await svgToPng(chartRef.current) : undefined;
-    saveFinding({
+    const result=await saveFinding({
       id: uid(),
       createdAt: Date.now(),
       metricName: analysis.metricName,
@@ -207,7 +207,8 @@ export default function DataParagraph() {
         sd: g.desc.sd,
       })),
     });
-    toast.success("已保存为「关键发现」，可在数据故事板中导入");
+    if(result.ok)toast.success("已保存为「关键发现」，可在数据故事板中导入");
+    else toast.error(result.message);
   }
 
   const chartData =
@@ -221,7 +222,7 @@ export default function DataParagraph() {
   return (
     <div>
       <ModuleHeader
-        code="MOD-02"
+        code="MOD-03"
         title="数据 → 论文段落生成器"
         desc="上传 Excel / CSV 后自动完成清洗、统计检验与制图，并生成「结果」和「讨论」初稿。数据事实与模型推断分开标注，推断内容必须经研究者核实后才能使用。"
       />

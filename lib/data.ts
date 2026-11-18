@@ -8,6 +8,7 @@ export interface RawTable {
 }
 
 export function parseCSVText(text: string, sourceName: string): RawTable {
+  if(text.length>20*1024*1024)throw new Error("文本过大，请限制为 20 MB 以内");
   const firstLine = text.slice(0, text.indexOf("\n") === -1 ? text.length : text.indexOf("\n"));
   const delim = [",", "\t", ";"]
     .map((d) => ({ d, n: firstLine.split(d).length }))
@@ -44,12 +45,14 @@ export function parseCSVText(text: string, sourceName: string): RawTable {
 }
 
 export async function parseFile(file: File): Promise<RawTable> {
+  if(file.size>20*1024*1024)throw new Error("数据文件超过 20 MB，请先筛选或拆分");
   const lower = file.name.toLowerCase();
   if (lower.endsWith(".csv") || lower.endsWith(".tsv") || lower.endsWith(".txt")) {
     return parseCSVText(await file.text(), file.name);
   }
   if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
-    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array",sheetRows:100002 });
+    if(!wb.SheetNames.length)throw new Error("工作簿没有可用工作表");
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const aoa = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, {
       header: 1,
@@ -57,6 +60,7 @@ export async function parseFile(file: File): Promise<RawTable> {
       defval: "",
     });
     const rows = aoa.filter((r) => r.some((c) => String(c).trim() !== ""));
+    if(rows.length>100001)throw new Error("工作表超过 100000 行，请先拆分数据");
     if (rows.length === 0) throw new Error("工作表中没有可用数据行");
     const headers = rows[0].map((h, i) => String(h).trim() || `列${i + 1}`);
     return {

@@ -168,7 +168,7 @@ export default function ImageIntegrity() {
   return (
     <div>
       <ModuleHeader
-        code="MOD-03"
+        code="MOD-04"
         title="科研图片防误用检测器"
         desc="上传同一论文或同一课题的多张图片，用感知哈希检测重复使用、镜像翻转与裁剪重叠，并结合比例尺声明核对放大倍数一致性。结果为筛查信号，最终认定需人工比对原始数据。"
       />

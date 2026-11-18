@@ -1,0 +1,14 @@
+import { pipeline, env, RawImage, Tensor } from '@huggingface/transformers';
+import sharp from 'sharp';
+import {configureTexTeller,recognizeFormula} from '../lib/formula-model.mjs';
+configureTexTeller(env);
+const image=await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="500" height="150"><rect width="500" height="150" fill="white"/><g font-family="Times New Roman" font-size="42" fill="black"><text x="30" y="55">x²</text><text x="30" y="125">a²</text><text x="120" y="90">−</text><text x="205" y="55">y²</text><text x="205" y="125">b²</text><text x="300" y="90">= 1</text></g><path d="M20 72 H90 M195 72 H265" stroke="black" stroke-width="2"/></svg>`)).png().toBuffer();
+const seen=new Set();
+const model=await pipeline('image-to-text','onnx-community/TexTeller-ONNX',{dtype:'q8',device:'cpu',session_options:{intraOpNumThreads:2},progress_callback:p=>{if(!p.file)return;const msg=p.file+':'+(Math.floor((p.progress??0)/25)*25);if(!seen.has(msg)){seen.add(msg);console.log(msg);}}});
+const raw=await RawImage.fromBlob(new Blob([image],{type:'image/png'}));
+await sharp(image).toFile(new URL('./fixtures/formula-fractions.png',import.meta.url).pathname.replace(/^\/([A-Za-z]:)/,'$1'));
+const result=[{generated_text:await recognizeFormula(model,raw,Tensor,RawImage,192)}];
+console.log(JSON.stringify(result));
+await model.dispose();
+const normalized=result[0]?.generated_text.replace(/\s/g,'').replace(/^\\\[|\\\]$/g,'');
+if(normalized!=='\\frac{x^{2}}{a^{2}}-\\frac{y^{2}}{b^{2}}=1')throw new Error('Formula differs from the expected fraction equation');

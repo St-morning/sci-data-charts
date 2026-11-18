@@ -54,19 +54,19 @@ export function groupedBar(m: GroupModel, t: Theme, o: PlotOpts): Rendered {
   const f = frame({ w: W, h: H, ml: 95, mr: 40, mt: 60, mb: 85, xlo: 0, xhi: ng, ylo: yLo, yhi: yHi, xcat: m.groups.map((g, i) => ({ at: i + 0.5, label: g })), xlabel: o.xLabel, ylabel: o.yLabel || m.valueName, title: o.title, theme: t });
   let s = f.svg;
   const gw = f.pw / ng;
-  const bw = (gw * 0.66) / ns;
+  const bw = (gw * o.barWidth) / ns;
   const rng = mulberry32(7);
   const centers: number[][] = [];
   for (let g = 0; g < ng; g++) {
     centers.push([]);
     for (let i = 0; i < ns; i++) {
-      const cx = f.X(g + 0.5) - (gw * 0.66) / 2 + bw * (i + 0.5);
+      const cx = f.X(g + 0.5) - (gw * o.barWidth) / 2 + bw * (i + 0.5);
       centers[g].push(cx);
       const col = t.colors[i % t.colors.length];
       const top = f.Y(st[g][i].mean);
       if (o.bars) s += `<rect x="${cx - bw / 2}" y="${top}" width="${bw}" height="${Math.max(0, f.Y(yLo < 0 ? 0 : yLo) - top)}" fill="${col}" fill-opacity="0.5" stroke="${col}" stroke-width="2"/>`;
       if (o.points) for (const v of m.values[g][i]) {
-        const jx = cx + (rng() - 0.5) * bw * 0.72;
+        const jx = cx + (rng() - 0.5) * bw * o.jitter;
         s += `<circle cx="${jx}" cy="${f.Y(v)}" r="5.5" fill="${col}" fill-opacity="0.65"/>`;
       }
       const e = errVal(st[g][i], o.error);
