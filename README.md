@@ -58,11 +58,7 @@ If Deno is unavailable, the static frontend can still build and run. Keep Functi
 The local service binds to `127.0.0.1:8000`; Vite development and built preview proxy `/functions/v1/app` to it, preserving the path. Probe with an available HTTP tool or Node `fetch`; with `curl` installed, for example:
 
 ```sh
-<<<<<<< HEAD
 curl --fail 'http://127.0.0.1:5173/functions/v1/app?name=Visitor'
-=======
-
->>>>>>> 471edf0f11177686cebf6b9dc50de5b9f5814954
 ```
 ![alt text](image-3.png)
 
