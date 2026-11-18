@@ -59,7 +59,7 @@ If Deno is unavailable, the static frontend can still build and run. Keep Functi
 The local service binds to `127.0.0.1:8000`; Vite development and built preview proxy `/functions/v1/app` to it, preserving the path. Probe with an available HTTP tool or Node `fetch`; with `curl` installed, for example:
 
 ```sh
-curl --fail 'http://127.0.0.1:5173/functions/v1/app?name=Visitor'
+![alt text](image-3.png)
 ```
 
 Use Vite's actual port if it differs. The same frontend request after deployment is routed by Qoder Sites. Local proxy configuration is not production routing. Keep local-only servers and fixtures in `dev/`, outside both publication directories. The included Function has no dependencies; add self-contained runtime imports as required. Frontend npm dependencies are not automatically installed in Functions.
