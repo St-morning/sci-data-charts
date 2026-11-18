@@ -16,6 +16,7 @@ Node.js 需要 `^22.13.0 || >=24.0.0`。构建：`npm run build`；图形和数�
 ## 原始模板说明
 
 A React, TypeScript, Vite and Tailwind frontend with a bundled Shadcn component catalog. Vite produces static files in `dist/`. Server behavior belongs in the optional Qoder Sites Function, not a Node or framework server.
+![alt text](image.png)
 
 ## Develop
 
@@ -45,8 +46,14 @@ The default page is entirely static and does not call a Function. For server beh
 npm run check:function
 npm run dev:function
 ```
+![alt text](image-1.png)
+
+![alt text](image-2.png)
+
 
 If Deno is unavailable, the static frontend can still build and run. Keep Function validation pending until Deno or an equivalent existing Function checker is available; `npm run build` checks the frontend only. Local proxy requests also need a running compatible Function server.
+
+
 
 The local service binds to `127.0.0.1:8000`; Vite development and built preview proxy `/functions/v1/app` to it, preserving the path. Probe with an available HTTP tool or Node `fetch`; with `curl` installed, for example:
 
